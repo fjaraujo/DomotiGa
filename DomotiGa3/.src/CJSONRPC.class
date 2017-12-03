@@ -407,11 +407,7 @@ Public Sub hServerSocket_Connection(RemoteHost As String)
 
   $cClients.Add(hS)
 
-< < < < < < < HEAD
-  If $bDebug Then Main.WriteDebugLog(LogLabel & "Client added. Total " & $cClients.Count & " client(s) connected.")
-== == == =
   Main.WriteDebugLog(LogLabel & "Client added. Total " & $cClients.Count & " client(s) connected.")
-> > > > > > > dd5fccaf49046b5204ec1b4ea756c1a09cb3a5d7
 
 End
 
@@ -422,11 +418,7 @@ Private Sub RemoveSocket(hS As CSocket)
 
   Try $cClients.Remove($cClients.Find(hS))
 
-< < < < < < < HEAD
-  If $bDebug Then Main.WriteDebugLog(LogLabel & "Client removed. Total " & $cClients.Count & " client(s) connected.")
-== == == =
   Main.WriteDebugLog(LogLabel & "Client removed. Total " & $cClients.Count & " client(s) connected.")
-> > > > > > > dd5fccaf49046b5204ec1b4ea756c1a09cb3a5d7
 
   ' Remove hooks to:
   ' subscribe.deviceupdate
@@ -3728,4 +3720,3 @@ Private Sub Call_Scene_Delete(cData As Collection)
   Endif
 
 End
-
