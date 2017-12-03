@@ -746,7 +746,9 @@ Private Sub DecodeJSON(iDeviceId As Integer, sPayload As String)
         Main.WriteDebugLog(LogLabel & "Field: '" & cPayload.Key & "'")
         Main.WriteDebugLog(LogLabel & "Value: '" & sValue & "'")
       Endif
-      Devices.ValueUpdate(iDeviceId, iValueNum, sValue)
+      If (sValue <> "NULL") Then
+        Devices.ValueUpdate(iDeviceId, iValueNum, sValue)
+      Endif
       Inc iValueNum
     Next
   Endif

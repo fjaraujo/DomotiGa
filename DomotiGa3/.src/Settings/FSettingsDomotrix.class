@@ -1,0 +1,414 @@
+' Gambas class file
+
+' Description:
+' FSettingsDomotrix.class
+' Settings form for domotrix nodes connected by XBee or Wifi 
+
+' Development Status:
+' Beta:) 
+
+' DomotiGa - an open source home automation program.
+' Copyright (C) Ron Klinkien, The Netherlands.
+
+' This code is written by 'fjaraujo' in 2015.
+
+' Read file called COPYING for license details.
+
+Public Sub Form_Open()
+
+  Me.Move(FMain.X + 50, FMain.Y + 70)
+
+  GetInstances()
+
+  ' always load first instance
+  If LoadSettings(1) = False Then
+    Message.Error("Couldn't load settings for instance #1!")
+    Try Me.Close
+    Return
+  Endif
+
+  EnableDisableSettings()
+  btnSave.Enabled = False
+
+End
+
+
+Public Sub GetInstances()
+
+  Dim iMax As Integer = GetMaxInstanceforPlugin("Domotrix")
+  Dim iInstance As Integer
+
+  cmbInstance.Clear
+  If iMax Then
+    For iInstance = 1 To iMax
+      cmbInstance.Add("Instance #" & iInstance)
+    Next
+  Else
+    Message.Error("Couldn't find MaxInstances value for this plugin!")
+  Endif
+
+End
+
+Private Sub GetMaxInstanceforPlugin(sPluginName As String) As Integer
+
+  If Main.bServer Then
+    Return Plugin.GetPluginMaxInstances(sPluginName)
+  Else
+    ' FIXME: We are running in client/server mode - call json
+    Return 9
+  Endif
+
+End
+
+Public Sub cmbInstance_Click()
+
+  ' load selected instance, if not available load defaults
+  If LoadSettings(cmbInstance.Index + 1) = False Then
+    LoadSettings(0)
+  Endif
+
+  EnableDisableSettings()
+  btnSave.Enabled = False
+
+End
+
+Public Sub btnCancel_Click()
+
+  Me.Close
+
+End
+
+Public Sub txtSerialPort_KeyPress()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub chkDebug_Click()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub btnSave_Click()
+
+  Dim rTest As Result
+  Dim iInstance As Integer = cmbInstance.Index + 1
+
+ 
+  ' test if instance is already present
+  rTest = Main.hDB.Exec("SELECT * from settings_domotrix WHERE id = &1", iInstance)
+  If rTest.Count = 1 Then
+    ' update settings
+     Main.hDB.Exec("UPDATE settings_domotrix SET Debug = &1, serialport = &2, baudrate = &3, enabled = &4, regex = &5, delimiter = &6, tcpport = &7, type = &8, ipaddress = &9, alias = &{10}, discoverytimeout = &{11} WHERE id = &{12} ", chkDebug.Value, txtSerialPort.Text, cmbBaudrate.Text, chkEnabled.Value, txtRegex.Text, txtDelimiter.Text, txtTCPPort.text, cmbType.text, txtIPAddress.Text, txtAlias.Text, txtDiscoveryTimeout.Text, iInstance)
+  Else
+    ' insert settings
+    Main.hDB.Exec("INSERT INTO settings_domotrix (debug, serialport, baudrate, enabled, regex, delimiter, tcpport, type, ipaddress, alias, discoverytimeout, id) values (&1, &2, &3, &4, &5, &6, &7, &8, &9, &{10}, &{11}, &{12})", chkDebug.Value, txtSerialPort.Text, cmbBaudrate.Text, chkEnabled.Value, txtRegex.Text, txtDelimiter.Text, txtTCPPort.text, cmbType.Text, txtIPAddress.Text, txtAlias.Text, txtDiscoveryTimeout.Text, iInstance)
+  Endif
+
+  If chkEnabled Then
+    FMain.MenuToolsDomotrixCmdr.Enabled = True
+  Else
+    FMain.MenuToolsDomotrixCmdr.Enabled = False
+  Endif
+
+  If Main.bServer Then
+    Plugin.Restart("Domotrix", iInstance)
+  Else
+    Client.Plugin_Restart("Domotrix", iInstance)
+  Endif
+
+  Me.Close
+
+End
+
+Public Sub btnDefaults_Click()
+
+  LoadSettings(0)
+  btnSave.Enabled = True
+
+End
+
+Public Sub chkEnabled_Click()
+
+  EnableDisableSettings()
+  btnSave.Enabled = True
+
+End
+
+Public Sub cmbType_Click()
+
+  If chkEnabled.Value Then SetButtons()
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtTCPHost_KeyPress()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtTCPPort1_KeyPress()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub cmbBaudrate_Click()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtRegex_KeyPress()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtRegex_Change()
+
+  TestRegEx()
+
+End
+
+Public Sub txtDelimiter_KeyPress()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtDelimiter_Change()
+
+  TestRegEx()
+
+End
+
+Public Sub txtInputTest_Change()
+
+  TestRegEx()
+
+End
+
+Public Sub txtDeviceAddress_Change()
+
+  TestRegEx()
+
+End
+
+Public Sub TestRegEx()
+
+  Dim aScan, aValueToUpdate As String[]
+  Dim sAddress, sAddressToChange, sValueFields As String
+  Dim iValueToUpdate, iAddressPosition As Integer
+  Dim rRegex As Regexp
+
+  txtValue1.Text = ""
+  txtValue2.Text = ""
+  txtValue3.Text = ""
+  txtValue4.Text = ""
+  txtBattery.Text = ""
+
+  ' sRegexExpression = Replace$(sGenericIORegex, "\\", "\\")  ' Gambas needs the " \ " character in a regex to be doubled to be recognised"
+  '
+  ' parse each line
+  ' parse sensor data using the regex for the interface to get the Address field to change
+  rRegex = New Regexp(txtInputTest.Text, txtRegex.Text)
+  sAddressToChange = rRegex.text
+  txtAddressMatch.Text = rRegex.text
+
+  ' try to find device with the address from the parsed input data as part of it's address field, and correct interface type.
+  sAddress = txtDeviceAddress.Text
+  aScan = Split(sAddress, "|")
+  iValueToUpdate = aScan.Find(sAddressToChange)
+  iAddressPosition = InStr(txtInputTest.Text, sAddressToChange)
+  sValueFields = Mid(txtInputTest.Text, iAddressPosition + Len(sAddressToChange))
+  aValueToUpdate = Split(sValueFields, txtDelimiter.Text)
+
+  Select aValueToUpdate.Count
+    Case 1
+      Select iValueToUpdate
+         Case 1
+            txtValue1.Text = Trim(aValueToUpdate[0])
+         Case 2
+            txtValue2.Text = Trim(aValueToUpdate[0])
+         Case 3
+            txtValue3.Text = Trim(aValueToUpdate[0])
+         Case 4
+            txtValue4.Text = Trim(aValueToUpdate[0])
+         Default
+            If chkDebug.Value Then Main.WriteDebugLog(("[Domotrix] Unknown value to update :") & iValueToUpdate)
+      End Select
+    Case 2
+      txtValue1.Text = Trim(aValueToUpdate[0])
+      txtValue2.Text = Trim(aValueToUpdate[1])
+    Case 3
+      txtValue1.Text = Trim(aValueToUpdate[0])
+      txtValue2.Text = Trim(aValueToUpdate[1])
+      txtValue3.Text = Trim(aValueToUpdate[2])
+    Case 4
+      txtValue1.Text = Trim(aValueToUpdate[0])
+      txtValue2.Text = Trim(aValueToUpdate[1])
+      txtValue3.Text = Trim(aValueToUpdate[2])
+      txtValue4.Text = Trim(aValueToUpdate[3])
+    Case 5
+      txtValue1.Text = Trim(aValueToUpdate[0])
+      txtValue2.Text = Trim(aValueToUpdate[1])
+      txtValue3.Text = Trim(aValueToUpdate[2])
+      txtValue4.Text = Trim(aValueToUpdate[3])
+      txtBattery.Text = Trim(aValueToUpdate[4])
+    Default
+       Return
+  End Select
+
+Catch
+  If chkDebug.Value Then Main.WriteDebugLog(("[XBee] ERROR: Parsing XBee regex ") & txtRegex.Text & " " & "Input Test to test " & txtInputTest.Text & " " & ERROR.Text & " at " & ERROR.Where)
+  txtValue1.Text = ""
+  txtValue2.Text = ""
+  txtValue3.Text = ""
+  txtValue4.Text = ""
+  txtBattery.Text = ""
+
+End
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Load table row
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Private Sub LoadSettings(iRow As Integer) As Boolean
+
+  Dim rResult As Result
+
+  rResult = Plugin.GetSettingsTable("settings_domotrix", iRow)
+
+  If rResult.Count Then
+    chkEnabled.Value = rResult!enabled
+    txtSerialPort.text = rResult!serialport
+    cmbBaudrate.Text = rResult!baudrate
+    chkDebug.Value = rResult!debug
+    txtRegex.Text = rResult!regex
+    txtDelimiter.Text = rResult!delimiter
+    txtTCPPort.text = rResult!tcpport
+    txtCheckInterval.text = rResult!checkinterval
+    cmbType.text = rResult!type 
+    txtIPAddress.text = rResult!ipaddress
+    txtAlias.text = rResult!alias
+    txtDiscoveryTimeout.text = rResult!discoverytimeout
+    txtInputTest.Text = "R2=1"
+    txtDeviceAddress.Text = "|R1=|R2=|R3=|R4=|"
+    txtAddressMatch.Text = ""
+    txtValue1.Text = ""
+    txtValue2.Text = ""
+    txtValue3.Text = ""
+    txtValue4.Text = ""
+    txtBattery.Text = ""
+    Return True
+  Else
+    Return False
+  Endif
+
+End
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Enable/Disable all input fields depending on enable value
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Private Sub EnableDisableSettings()
+
+  chkDebug.Enabled = chkEnabled.Value
+  txtRegex.Enabled = chkEnabled.Value
+  txtDelimiter.Enabled = chkEnabled.Value
+  txtCheckInterval.Enabled = chkEnabled.Value
+  txtIPAddress.Enabled = chkEnabled.Value
+  txtAlias.Enabled = chkEnabled.Value
+  txtDiscoveryTimeout.Enabled = chkEnabled.Value
+  btnSave.Enabled = chkEnabled.Value
+  
+  If chkEnabled.Value Then SetButtons()
+
+End
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+'
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Sub SetButtons()
+
+  If (InStr(cmbType.Text, "XBee") > 0) Then
+    txtSerialPort.Enabled = True
+    btnSerial.Enabled = True
+    txtTCPPort.Enabled = True
+    cmbBaudrate.Enabled = True
+    txtDiscoveryTimeout.Enabled = True
+    txtIPAddress.Enabled = False
+    txtAlias.Enabled = False
+  Else
+    txtSerialPort.Enabled = False
+    btnSerial.Enabled = False
+    txtTCPPort.Enabled = False
+    cmbBaudrate.Enabled = False
+    txtDiscoveryTimeout.Enabled = False
+    txtIPAddress.Enabled = True
+    txtAlias.Enabled = True
+  End If
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub btnSerial_Click()
+
+  Dim sSerialPort As String
+
+  sSerialPort = FToolsSerialPorts.Run()
+  If sSerialPort Then txtSerialPort.Text = sSerialPort
+  btnSave.Enabled = True
+
+End
+
+Public Sub TextLblInterfaceType_MouseDown()
+
+  
+
+End
+
+
+Public Sub cmbType_Change()
+
+  SetButtons
+
+End
+
+Public Sub txtIPAddress_Change()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtAlias_Change()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtSerialPort_Change()
+
+  btnSave.Enabled = True
+
+End
+
+Public Sub txtTCPPort_Change()
+
+   btnSave.Enabled = True
+
+End
+
+Public Sub txtCheckInterval_Change()
+
+   btnSave.Enabled = True
+
+End
+
+Public Sub txtDiscoveryTimeout_Change()
+
+  btnSave.Enabled = True
+
+End

@@ -1,0 +1,1342 @@
+' Gambas class file
+
+' Gambas class file
+
+' Description:
+' CDomotrix.class
+' Support Domotrix devices with two interfaces:
+'    1 ) For XBee Zigbee network based On XBee Series 2 Coordinator In API mode And XBee Series 2 Routers / End Nodes In AT mode attached To Arduino using configurable regular expressions(regex) To determine the device identifier And values.
+'    2 ) Wifi provided by ESP2866 connected by serial interface to arduino
+
+' Development Status:
+' On going
+
+' DomotiGa - an open source home automation program.
+' Copyright (C) Ron Klinkien, The Netherlands.
+
+' This code is written by 'fjaraujo' in 2015.
+
+' Read file called COPYING for license details.
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Module/Class specific variables
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public PluginName As String = "Domotrix"
+Public PluginFriendlyName As String = "Domotrix interface"
+Public PluginVersion As String = "1.00"
+Public PluginAuthor As String = "fjaraujo"
+Public PluginProtocols As String[]
+Public PluginMaxInstances As Integer = 9
+
+Public KeyName As String
+Public LogLabel As String = "[Domotrix] "
+Public InterfaceId As Integer
+Public Instance As Integer
+Public IsRunning As Boolean
+Public ErrorText As String
+Public ErrorWhere As String
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Public variables
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Public Struct DomotrixNode 
+  iInstance As Integer
+  sType As String      ' If is an Xbee or Wifi node
+  bEnabled As Boolean
+  sXBeeName As String
+  sXBeeMode As String  'Coordinator, End node, Router
+  sXBeeAddr As String
+  iXbeeRSSI As Integer  ' RSSI  (quality of signal)
+  sXBeeSWVersion As String
+  sXBeeHWVersion As String
+  iXBeeIR As Integer ' IO Sample Rate
+  iXBeeIC As Integer ' IO Digital Change Detection
+  iXBeeIOCfg As Integer[] 'IO D0-D5 config
+  iXBeeIOValue As Integer[] 'IO D0-D1 current value
+  
+  bHasBoard As Boolean 'If XBee is attached to a Domotrix board
+  sBoardName As String
+  sBoardVersion As String
+  iStatus As Integer ' If XBee node is connected and answering in the network. 0: Connected and OK,  1: Connected and ERR,  2: Disconnected
+  sAlias As String      ' If the type is Wifi, it's necesary to use an alias as alternative to sXbeeName, to save eeprom backups using this word
+  sIPAddress As String
+  
+  cDeviceConfig As Collection  ' Stores all the information coming from [CONFIG] cmd
+  cDeviceStat As Collection  ' Stores all the information coming from [STAT] cmd
+  sCurrentCommand As String    ' This is to control transactions. Possible values: "INIT, CONFIG, STAT, UPLOAD_EEPROM, DOWNLOAD_EEPROM"
+  cEEPROMData As Collection    ' Stores the EEPROM data, used during BACKUP
+  sBackupFile As String        ' Filename (with path) where cEEPROMData will be stored
+  dLastMsgReceived As Date
+  sLastMsgReceived As String
+  dLastMsgSent As Date
+  sLastMsgSent As String
+  dLastDiscovered As Date
+End Struct
+
+Public Const STATUS_CONNECTED_OK As Integer = 0 
+Public Const STATUS_CONNECTED_ERR As Integer = 1
+Public Const STATUS_DISCOVERED As Integer = 3
+Public Const STATUS_DISCONNECTED As Integer = 3
+
+Public cNodes As New Collection
+
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Private Variables
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Private $bEnabled As Boolean
+Private $sSerPort As String
+Private $sBaud As String
+Private $bDebug As Boolean
+Private $sXBeeRegex As String
+Private $sXBeeDelimiter As String
+Private $sTcpPort As String
+Private $sIpaddress As String
+Private $sAlias As String
+Public $sType As String
+Private $iCheckInterval As Integer
+Public $iDiscoveryTimeout As Integer
+
+Private sBuffer As String
+
+Public hXBeeIOTCP As New Socket
+Public hJSONRPC As New Socket
+Public hFile As File
+
+Public tReConnect As Timer
+Private iReConnectRetry As Integer = 0 ' retries
+Private aReConnectDelay As Integer[] = [5000, 10000, 30000, 60000, 300000, 900000, 1800000, 3600000, 7200000, 14400000] ' 5sec, 10sec, 30sec, 1min, 5min, 15min, 1/2hour, 1hour, 2hours, 4hours
+
+Private iNumNodes As Integer
+Private sCurrentNodeName As String
+
+' To make the EEPROM Upload
+Private iMemIndex As Integer
+Private hFile1 As File
+' ------------------
+
+' Timers to control errors and manage the netwoek
+Public tTransaction As Timer   ' Monitor status of the nodes during a transaction (RETRIEVE, STORE, CONFIG, STAT, etc., and reacts in case of failure
+Public tPoll As Timer      ' Send an STAT command periodically to all the conected nodes with board, to check if they are alive
+Public tDiscover As Timer  ' Launch a discovery periodically to connect nodes that are disconnected
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Version - needs to match the xbee library version
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public sLibXBee As String = "XBee version 3.0.5"
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' The wrapper for the XBee library
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Library "libdomoxbee"
+
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' External library call definitions
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Initialize and destroy the wrapper 
+Private Extern DomoXBee_Init(port As String, baudrate As Integer, timeout As Integer, tcpport As Integer) As Integer
+Private Extern DomoXBee_Discover(timeout As Integer) As Boolean
+
+Private Extern DomoXBee_Destroy()
+
+
+Private Extern DomoXBee_SendCmd(xbee_name As String, cmd As String) As Integer
+'Private Extern DomoXBee_GetNodeName(index As Integer) As String   ' NOT USED!!!
+'Private Extern DomoXBee_GetNodeAddress(index As Integer) As String  ' NOT USED!!!
+
+Public Extern DomoXBee_SetIO(xbee_name As String, port As Integer, value As Integer) As Integer
+Private Extern DomoXBee_GetXbeeData(xbee_name As String) As Boolean
+
+Private Extern DomoXBee_start_IO_listener(xbee_name As String) As Boolean
+
+' Retrieve wrapper and controller information
+Private Extern DomoXBee_Version() As String
+
+'Private Extern DomoXbee_WaitForTCPConnection()   ' NOT USED!!!
+
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Mandatory subroutine for each Module/Class to initialize:
+' - The cPlugin[x].Settings are copied into local variables
+' - Port/Connection will be started (any errors caught)
+' - Any other code per Class
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Sub StartPlugin(cPl As CPluginEntry)
+
+  KeyName = cPl.KeyName
+  Instance = cPl.Instance
+  If Instance <> 1 Then LogLabel = Replace(LogLabel, "] ", "#" & Instance & "] ")
+
+  ' Copy configuration items locally
+  $bEnabled = cPl.Settings["enabled"]
+  $sType = cPl.Settings["type"]
+  $sSerPort = cPl.Settings["serialport"]
+  $sBaud = cPl.Settings["baudrate"]
+  $bDebug = cPl.Settings["debug"]
+  $sXBeeRegex = cPl.Settings["regex"]
+  $sXBeeDelimiter = cPl.Settings["delimiter"]
+  $sTcpPort = cPl.Settings["tcpport"]
+  $iCheckInterval = cPl.Settings["checkinterval"]
+  $SIpaddress = cPl.Settings["ipaddress"]
+  $sAlias = cPl.Settings["alias"]
+  $iDiscoveryTimeout = cPl.Settings["discoverytimeout"]
+
+  InterfaceId = Devices.FindInterface("Domotrix interface")
+  If InterfaceId = 0 Then
+    ErrorText = "Required InterfaceId can't be retrieved from the database!"
+    Main.WriteLog(LogLabel & "ERROR: " & ErrorText)
+    IsRunning = False
+    Return
+  Endif
+  
+  Connect()
+  
+End
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Mandatory sub for each Module/Class to stop
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Sub StopPlugin()
+
+  Disconnect()
+  
+End
+
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' run Domotrix (xBee/Wifi) network related tasks
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Sub RunTask()
+  
+  Print "RunTask"
+  
+  
+End
+
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+'                                       SERIAL PORT HANDLING
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' Init XBee Network
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Function Connect() As Boolean
+ Dim node As DomotrixNode
+ Dim i As Integer
+ Dim result As Integer
+ 
+'isRunning = True
+
+If $bDebug Then Main.WriteDebugLog(LogLabel & DomoXBee_Version())
+
+
+If $sType = "XBee" Then
+     
+   Result = DomoXBee_Init($sSerPort, $sBaud, $iDiscoveryTimeout, $sTcpPort) 
+   
+   If (result <> 0) Then 
+      Main.WriteLog(LogLabel & "ERROR: " & PluginFriendlyName & " serial interface FAILED to connect to port " & $sSerPort)
+      IsRunning = False
+      FMain.MenuToolsDomotrixCmdr.Enabled = False
+      Return False
+   Else
+      hXBeeIOTCP = New Socket As "XBeeIOTCP"
+      hXBeeIOTCP.Connect("localhost", $sTcpPort) ' Once the TCP socket is connected, a Discover procedure will be launched, from _ready Event
+   Endif
+   
+   
+ 
+Else  ' Node type WIFI
+   Main.WriteLog(LogLabel & "INFO: " & PluginFriendlyName & " Wifi interface not implemented yet.")
+
+   node = New DomotrixNode
+   node.sType = "WiFi"
+   node.iInstance = Me.Instance
+   node.sAlias = $sAlias
+   node.bHasBoard = True
+   node.iStatus = STATUS_DISCONNECTED
+   node.bEnabled = $bEnabled
+   cNodes.Add(node, $sAlias)
+End If
+  
+   ' Create timer inspector to control errors
+   tTransaction = New Timer As "tRecover"
+   tTransaction.Delay = 5000
+  
+   tPoll = New Timer As "tPoll"
+   tPoll.Delay = 60000
+  
+   tDiscover = New Timer As "tDiscover"
+   tDiscover.Delay = 5000
+   FMain.MenuToolsDomotrixCmdr.Enabled = True
+   isRunning = True
+  
+Return True
+
+
+Catch ' some errors
+  Main.WriteLog(LogLabel & "ERROR: " & PluginFriendlyName & " could not be started.")
+  Main.WriteLog(LogLabel & "ERROR: " & Error.Text)
+  IsRunning = False
+  ErrorText = Error.Text
+  ErrorWhere = Error.Where
+
+  Return False
+
+End
+
+
+' Seach for new XBee nodes in the network
+Public Function Discover() As Integer
+
+ If $sType = "XBee" Then
+    Main.WriteLog(LogLabel & "Starting discovery process...")
+    tPoll.Stop 
+    DomoXBee_Discover($iDiscoveryTimeout) 
+ End If
+  
+Return 0
+
+End
+
+
+
+' -------------------------------------------------------------------------------------------------------------------------------------------------
+' Domotrix Board Operations
+' -------------------------------------------------------------------------------------------------------------------------------------------------
+
+' Upload EEPROM
+' Read a .data file with the EEPROM values and send them to the board using STORE command
+
+Public Sub UploadEEPROMData_first(sNode As String, sFile As String) 
+Dim sLine As String
+Dim sVersion As String[]
+Dim result As Boolean
+Dim iResult As Integer
+
+iMemIndex = 1
+
+If $bDebug Then Main.WriteDebugLog(LogLabel & "Upload of config data for node '" & sNode & "' requested, using file '" & sFile & "'") 
+
+Try hFile = Open sFile For Input
+If Error Then 
+   Message.Error("EEPROM file '" & sFile & "' doesn't exists", "OK")
+   Return
+Endif
+
+
+Line Input #hFile, sLine ' First line with "version:xx", check this!
+sVersion = Split(sline, ":")
+If (sVersion[1] <> cNodes[sNode].sBoardVersion) Then
+  Message.Error("Wrong file version: " & sVersion[1] & ", board version: " & cNodes[sNode].sBoardVersion)
+  Close hFile
+  Return
+Endif
+
+Line Input #hFile, sLine ' Avoid the second line with value = 7 (control digit)
+
+tPoll.Stop
+tDiscover.Stop
+tTransaction.Start
+cNodes[sNode].sCurrentCommand = "UPLOAD_EEPROM"
+
+If FToolsDomotrixCmdr.Visible Then  
+     FProgress.sNode = sNode
+     FProgress.hXBee = Me
+     FProgress.Show
+     FProgress.setProgressBar(5)
+     FProgress.lblStatus.Text = "Reseting node..."
+Endif
+ 
+' First try to reset the board to get into program mode
+result = ResetNode(sNode)
+Wait 3
+
+If (cNodes[sNode].sCurrentCommand <> "UPLOAD_EEPROM") Then  ' The operation has been cancelled by user
+  Return
+Endif
+ 
+If (result = True) Then              
+   If FToolsDomotrixCmdr.Visible Then  
+     FProgress.setProgressBar(10)
+     FProgress.lblStatus.Text = "Deleting EEPROM..."
+   Endif
+   iResult = SendDXCommand(cNodes[sNode], "[DELETE]\n")
+Endif
+
+If (cNodes[sNode].sCurrentCommand <> "UPLOAD_EEPROM") Then  ' The operation has been cancelled by user
+  SendDXCommand(cNodes[sNode], "[CONNECT]\n]")
+  Return
+Endif
+
+
+If (iResult <> 0) Then
+  If FToolsDomotrixCmdr.Visible Then  
+     FProgress.setProgressBar(0)
+     FProgress.lblStatus.Text = ""
+     FProgress.Close
+     Message.Error("An error has occured while loading EEPROM. Check node connectivity", "OK")
+  Endif
+Endif
+
+End Sub
+
+Public Sub UploadEEPROMData_next(sNode As String)
+Dim sLine As String
+Dim sCmd As String
+Dim high As Byte
+Dim low As Byte
+Dim result As Integer
+
+Line Input #hFile, sLine
+
+While CInt(sLine) = 0 And Not Eof(hfile)
+  Line Input #hFile, sLine  
+  iMemIndex = iMemIndex + 1
+Wend
+
+If Not Eof(hFile)
+  If CInt(sLine) <> 0 Then
+    high = Lsr(iMemIndex And &HFF00, 8) 
+    low = iMemIndex And &HFF
+    sCmd = "[STORE (" & Int(high And &HFF) & "," & Int(low And &HFF) & "," & sLine & ")]"
+    Print sCmd
+    ' Update progress bar in XBee Commander
+    If FToolsDomotrixCmdr.Visible Then
+      FProgress.lblStatus.text = "Loading data into node " & sNode & "..."  
+      FProgress.setProgressBar(10 + ((iMemIndex / 1024) * 85))
+    Endif
+    
+    result = SendDXCommand(cNodes[sNode], sCmd & "\n")
+    
+    If (result <> 0) Then
+      If FToolsDomotrixCmdr.visible Then
+        FProgress.Close
+        Message.Error("An error has ocurred while uploading. Please check node conectivity.", "OK")
+      Endif
+      cNodes[sNode].sCurrentCommand = ""
+      hfile.Close
+      Return
+    Endif
+  Endif
+  iMemIndex = iMemIndex + 1
+Else 
+  If FToolsDomotrixCmdr.Visible Then  
+      FProgress.setProgressBar(100)
+  End If
+  sCmd = "[STORE (0,0,7)]" ' At the end, send the control value. This will enable the board
+  result = SendDXCommand(cNodes[sNode], sCmd & "\n")
+  cNodes[sNode].sCurrentCommand = ""
+  tTransaction.Stop
+  tPoll.Start
+  If (result <> 0) Then
+      If FToolsDomotrixCmdr.visible Then
+        FProgress.Close
+        Message.Error("An error has ocurred while uploading. Please check node conectivity.", "OK")
+      Endif
+      Return
+  Endif
+  If FToolsDomotrixCmdr.Visible Then  
+      FProgress.setProgressBar(85)
+      FProgress.lblStatus.text = "Updating config data..."
+  Endif
+  Main.WriteLog(LogLabel & "Config data in node '" & sNode & "' updated sucessfully!")
+  hFile.Close
+  result = SendDXCommand(cNodes[sNode], "[CONNECT]\n")
+End If
+  
+End
+
+'------------------------------------------------------------------------------------------------------------------------
+
+' Load config in Domotiga from board, using CONFIG
+Public Function LoadConfig(sNode As String) As Boolean
+   Dim node As DomotrixNode
+   Dim result As Integer
+   
+   node = cNodes[sNode]
+   
+   If (node = Null) Then
+     Return
+   Endif
+  
+   tTransaction.Start  
+   node.sCurrentCommand = "CONFIG"
+   
+   result = SendDXCommand(node, "[CONFIG]\n")
+  
+   If (result = 0) Then 
+    Return True
+   Else
+      'If $bDebug Then Main.WriteDebugLog(LogLabel & "Error " & result & " in LoadConfig(" & sNode.sXBeeName & ")")
+      Return False
+   End If
+End
+
+
+Public Function ResetNode(sNode As String) As Boolean
+  Dim result As Integer
+  
+  cNodes[sNode].dLastMsgSent = Now
+  
+  Try result = DomoXBee_SetIO(sNode, 3, 4)
+  If (result <> 0) Then
+     'If $bDebug Then Main.WriteDebugLog(LogLabel & "Error " & result & " en ResetNode(" & sNode.sXBeeName & ")")
+     Return False
+  Endif
+   
+  Wait 1
+  Try result = DomoXBee_SetIO(sNode, 3, 5)
+  If (result <> 0) Then
+     'If $bDebug Then Main.WriteDebugLog(LogLabel & "Error " & result & " en ResetNode(" & sNode.sXBeeName & ")")
+     Return False
+  Endif
+  
+  Return True
+  
+  Catch
+    Print "Error!"
+End
+
+
+Public Function BackupNode(sNode As String, sBackupFile As String) As Integer
+  Dim result As Integer
+ 
+  cNodes[sNode].sCurrentCommand = "DOWNLOAD_EEPROM"
+  cNodes[sNode].sBackupFile = sBackupFile
+  If (cNodes[sNode].cEEPROMData = Null) Then
+      cNodes[sNode].cEEPROMData = New Collection
+  Else
+      cNodes[sNode].cEEPROMData.Clear
+  Endif
+  tPoll.Stop  
+  tTransaction.Start
+  SendDXCommand(cNodes[sNode], "[RETRIEVE]\n") 
+  
+  
+End
+
+' In case general failure with a node try to recover it: first: loading existing backup file, if doesn't exists, load defaults for the provided board version, if > 0
+Public Function AutoRecoverNode(sNode As String, iBoardVersion As Integer) As Boolean
+  Dim sFile As String 
+  Dim result As Boolean = False
+
+  
+  ' Check if exists a backup file for the node
+  sFile = Main.sBaseDir &/ "domotrix/" & sNode & ".data"
+  If Exist(sFile) Then
+      Main.WriteLog(LogLabel & "Autorecovery node '" & sNode & "', using backup file '" & sFile & "'.")
+      UploadEEPROMData_first(sNode, sFile)
+      result = True
+  Else
+      If iBoardVersion > 0 Then
+        sFile = Main.sBaseDir &/ "domotrix/EEPROM_v" & iBoardVersion & ".data"
+        If Exist(sFile) Then
+            Main.WriteLog(LogLabel & "Autorecovery node '" & sNode & "', using default data from file '" & sFile & "'.")
+            UploadEEPROMData_first(sNode, sFile)
+            result = True
+        End If
+      Endif
+  Endif
+  If (Not result) Then
+      Main.WriteLog(LogLabel & "Autorecovery failed for node '" & sNode & "'. No appropiate data found to upload.")
+  Endif
+  
+  Return Result
+End
+
+
+' Generic procedure to send DX command to a remote node
+Public Function SendDXCommand(sNode As DomotrixNode, sCmd As String) As Integer
+  Dim node As DomotrixNode
+  Dim result As Integer = 0
+  Dim retries As Integer
+  Dim port As Integer
+  Dim value As Integer
+  
+  
+  If ($sType = "XBee") Then
+    node = sNode
+    If (node = Null) Then 
+       Return result
+    Endif
+    node.sLastMsgSent = sCmd
+    node.dLastMsgSent = Now
+    
+    ' Now see if sCmd has to be sent to an Arduino board or is an instruction DIOxx for XBee 
+    If Left(sCmd, 4) = "[DIO" Then ' Is a command for XBee
+      port = Mid(sCmd, 5, 1)
+      If InStr(sCmd, "ON") > 0 Then
+        value = 4 
+      Else
+        value = 5       
+      Endif
+      
+      result = DomoXBee_SetIO(sNode.sXBeeName, port, value)
+
+    Else ' It is a command for Arduino board
+      
+      result = DomoXBee_SendCmd(sNode.sXBeeName, sCmd)
+  
+    Endif
+    
+    
+    If (result <> 0 And result <> -30) Then
+      If $bDebug Then Main.WriteDebugLog(LogLabel & "Error " & result & " en SendDXCommand(" & sNode.sXBeeName & "," & sCmd & ")")
+      
+      ' Second trial
+      Wait 1.5
+      node.dLastMsgSent = Now
+      result = DomoXBee_SendCmd(sNode.sXBeeName, sCmd)
+    Endif
+  Endif
+  
+  If (result <> 0) Then
+     node.iStatus = STATUS_DISCONNECTED
+     If (FToolsDomotrixCmdr.Visible) Then
+         FToolsDomotrixCmdr.UpdateGrid
+     Endif
+     Main.WriteLog(LogLabel & "Couldn't send command '" & Replace(scmd, "\n", "") & " ' to node '" & sNode.sXBeeName & "'. ERROR: " & result)
+  Endif
+  
+   
+  Return Result
+End
+
+
+
+Public Sub XbeeIOTCP_Ready()
+  Dim node As DomotrixNode
+  Dim rTest As Result
+  Dim found As Boolean
+  Dim i As Integer
+  
+  Main.WriteLog(LogLabel & "XBee Network established.")
+  IsRunning = True
+  
+  
+  If ($sType = "XBee") Then
+  
+    'First check xbee_nodes table to see the registered nodes
+    rTest = Main.hDB.Exec("SELECT * from xbee_nodes WHERE id = &1", Me.Instance)
+  
+   
+    While rTest.Available
+      If (cNodes[rTest!alias] = Null) Then
+          node = New DomotrixNode
+          node.sType = "XBee"
+          node.iInstance = Me.Instance
+          node.sXBeeName = rTest!alias
+          node.sXBeeAddr = rTest!address
+          node.bHasBoard = rTest!hasBoard
+          node.iStatus = STATUS_DISCONNECTED
+          node.bEnabled = rTest!enabled
+          node.dLastDiscovered = rTest!lastDiscovered
+          cNodes.Add(node, rTest!alias)
+      Endif
+      rTest.MoveNext
+    Wend
+   
+  
+    Discover()
+ 
+ Endif
+  
+  ' connected so reset retry counter
+'  tReConnect.Stop
+'  iReConnectRetry = 0
+
+End
+
+Public Sub XBeeIOTCP_Found()
+
+  Log.Plugin_DNS_Found(LogLabel, "localhost")
+
+End
+
+Public Sub XBeeIOTCP_Read()
+
+  Dim sData As String
+
+  If Last.Status <> Net.Connected Then Return
+  sData = Read #Last, 1
+  If sData = Chr(10) Or sData = Chr(13) Then ' buffer until carriage return or linefeed
+    If FToolsDomotrixCmdr.Visible Then  
+      FToolsDomotrixCmdr.newMessage(sBuffer)
+    Endif
+    Print sBuffer 
+    If Len(sBuffer) > 1 Then 
+       If $bDebug Then Main.WriteDebugLog(LogLabel & sBuffer) 
+       DomotrixParsing(sBuffer) ' Parse the text
+    Endif
+    sBuffer = Null
+  Else
+    sBuffer &= sData 
+  Endif
+End
+
+
+Public Sub XBeeNodeDiscovered(alias As String, address As String)
+  Dim node As DomotrixNode
+  
+  'Check if discovered node is already registered
+  If cNodes.Exist(alias) Then
+     If (cNodes[alias].bHasBoard) Then
+      cNodes[alias].iStatus = STATUS_DISCOVERED ' In this case we need a response from board to check OK
+     Else
+      cNodes[alias].iStatus = STATUS_CONNECTED_OK
+     Endif
+     cNodes[alias].dLastDiscovered = Now
+     Main.hDB.Exec("UPDATE xbee_nodes SET lastDiscovered=&1 WHERE alias = &2 AND id = &3", cNodes[alias].dLastDiscovered, cNodes[alias].sXBeeName, cNodes[alias].iInstance)
+  Else
+     node = New DomotrixNode
+     node.sType = "XBee"
+     node.iInstance = Me.Instance
+     node.sXBeeName = alias
+     node.sXBeeAddr = address
+     node.bHasBoard = False
+     node.iStatus = STATUS_DISCOVERED
+     node.bEnabled = True
+     node.dLastDiscovered = Now
+     cNodes.Add(node, node.sXBeeName)
+     Main.hDB.Exec("INSERT INTO xbee_nodes (alias, id, hasBoard, lastDiscovered, address, enabled) values (&1, &2, &3, &4, &5, &6)", node.sXBeeName, node.iInstance, node.bHasBoard, Now, node.sXBeeAddr, node.bEnabled)
+  Endif  
+End
+
+
+' This procedure tries to detect if some node is not available, and try to recover it 
+Public Sub tTransaction_Timer()
+  Dim node As DomotrixNode
+  Dim result As Boolean
+  Dim timeout As Integer = 5
+  
+  ' Detect a broken transaction with a node without response
+  For Each node In cNodes
+    If node.bEnabled And node.sCurrentCommand <> "" ' And node.iStatus = STATUS_CONNECTED_OK Then
+       If DateDiff(node.dLastMsgSent, Now, gb.Second) > timeout And DateDiff(node.dLastMsgReceived, Now, gb.Second) > timeout Then
+           If (node.sCurrentCommand = "UPLOAD_EEPROM") Then
+              If (FToolsDomotrixCmdr.Visible) Then
+                 FProgress.Close
+                 Message.Error("An error has ocurred while uploading. Please check node conectivity.", "OK")
+              Endif
+            Sleep 0.1
+            iMemIndex = iMemIndex - 1
+            UploadEEPROMData_next(node.sXBeeName)
+           Endif
+           'RecoverNode(node.sXBeeName)
+           'node.sCurrentCommand = "RECOVERY_1"
+           If (node.sCurrentCommand = "CONFIG") Then  
+           Endif
+        Endif  
+      Endif
+   Next
+
+ Catch
+    Print "XBee ERROR: " & Error.Text
+  
+End
+
+' Send a periodic STAT to all the enabled boards to check if they are alive
+Public Sub tPoll_Timer()
+  Dim node As DomotrixNode
+  Dim result As Integer
+  
+  Print "Timer poll"
+  
+  For Each node In cNodes
+        ' If there is some node with ERR, try to recover it
+        If node.bEnabled And node.bHasBoard And node.iStatus = STATUS_CONNECTED_ERR Then
+          RecoverNode(node.sXBeeName)
+        Endif
+  
+        ' Keep alive a node (send STAT if no response during a time)
+        If node.bEnabled And node.bHasBoard And Not InTransaction() And node.iStatus = STATUS_CONNECTED_OK Then
+            If DateDiff(node.dLastMsgReceived, Now, gb.Second) > ($iCheckInterval * 1.5) Then ' No response from last Poll, so there is a problem with the board!
+                    node.iStatus = STATUS_CONNECTED_ERR 
+                    RecoverNode(node.sXBeeName)
+            Else
+               Try result = SendDXCommand(node, "[STAT]\n")
+               If (result <> 0) Then
+                  node.sCurrentCommand = "RECOVERY_1"
+                  node.iStatus = STATUS_DISCONNECTED
+                  Main.WriteLog(LogLabel & "Node " & node.sXBeeName & " is disconnected. ERROR: " & result)
+                  If (FToolsDomotrixCmdr.Visible) Then
+                     FToolsDomotrixCmdr.UpdateGrid        
+                  Endif
+                  Discover()
+               Endif
+            Endif
+        Endif
+  Next
+     
+  Catch
+    Print "XBee ERROR: " & Error.Text
+End
+
+Public Sub JSONSocket_Error()
+  
+  Plugin.Restart("JSONRPC")  
+  hJSONRPC.Close
+  
+End
+
+Public Sub JSONSocket_Ready()
+  
+  hJSONRPC.Close
+  
+End
+
+
+
+Public Sub tDiscover_Timer()
+  Dim bDiscover As Boolean
+  Dim bLoadConfig As Boolean
+  Dim node As DomotrixNode
+
+  
+  bDiscover = False
+  bLoadConfig = False
+  
+  If tTransaction.Enabled Then Return
+  
+  Print "timer discover"
+  
+  
+  For Each node In cNodes
+        ' If there is some node with ERR, try to recover it
+        If node.bEnabled And node.bHasBoard And node.iStatus = STATUS_DISCONNECTED Then
+          bDiscover = True
+        Endif
+         If node.bEnabled And node.bHasBoard And node.iStatus = STATUS_CONNECTED_ERR Then
+          LoadConfig(node.sXBeeName)
+          bLoadConfig = True
+        Endif
+  Next
+
+  If bDiscover Then 
+    Discover()
+  Endif
+  
+  If Not bDiscover And Not bLoadConfig Then
+    tDiscover.Delay = 120000
+  Endif
+  
+End
+
+
+Public Sub RecoverNode(XBeeName As String)
+    Dim Result As Boolean
+      
+    Main.WriteLog(LogLabel & "Node " & XBeeName & " is going to be recovered")
+    
+    result = ResetNode(XBeeName) ' Try to recover the node, doing a hw reset
+    If (Not result) Then
+        cNodes[XBeeName].iStatus = STATUS_DISCONNECTED
+        Main.WriteLog(LogLabel & "Error trying to recover node '" & XBeeName & "': Xbee not reachable in the network.")
+    Else
+        Wait 2
+        SendDXCommand(cNodes[XBeeName], "[CONFIG]\n")
+        Main.WriteLog(LogLabel & "Node '" & XBeeName & "' has been restarted. Now sending CONFIG and waiting for response...'")
+    Endif
+End
+
+
+
+' This function returns True if there is some node in a middle of a transaction (backup, restore, config, etc.)
+' This is to avoid interferences when we do backup or restore
+Public Function InTransaction() As Boolean
+  Dim node As DomotrixNode
+  
+  For Each node In cNodes
+      If node.sCurrentCommand <> "" Then
+        Return True 
+      Endif
+  Next
+  
+  Return False
+End
+
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' close port
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Function Disconnect() As Boolean
+
+  ' try to close the connection
+
+   tTransaction.Stop
+   tPoll.Stop
+   tDiscover.Stop
+   
+   Try hXBeeIOTCP.Close
+
+
+   If $sType = "XBee" Then
+   
+  
+    Try DomoXBee_Destroy()
+
+    Main.WriteLog(LogLabel & PluginFriendlyName & " XBee network closed.")
+  End If
+  
+  
+  ' all ok
+  Return True
+
+Finally
+  IsRunning = False
+  ErrorText = ""
+  ErrorWhere = ""
+
+Catch
+  Main.WriteLog(LogLabel & "ERROR: " & Error.Text)
+  Return False
+
+End
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+'                                                PARSE/HANDLE INPUT DATA RECEIVED FROM XBee
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Private Sub DomotrixParsing(sData As String)
+  Dim sNode As String
+  Dim pos As Integer
+  Dim sVersion As String
+  Dim sName As String
+  Dim sParts As String[]
+  Dim sParts2 As String[]
+  Dim bProcessed As Boolean
+  Dim hFile As File
+  Dim i As Integer
+  
+  bProcessed = False
+  sData = Replace$(sData, "[", "")
+  sData = Replace$(sData, "]", "")
+  
+  pos = InStr(sData, "@")
+  If (pos > 0) Then
+    sNode = Left$(sData, pos - 1) & Null
+    sCurrentNodeName = sNode
+  Else ' In this case, the message comes from XBee library, not from a node
+    XBeeParsing(sData)
+    Return
+  Endif
+  
+  'If (cNodes.Exist(sNode) = False) Then Return Endif
+  
+  If (cNodes[sNode] = Null) Then 
+    Return 
+  Endif
+  
+  cNodes[sNode].dLastMsgReceived = Now
+  cNodes[sNode].sLastMsgReceived = sData
+      
+  If (InStr(sData, "TON") + InStr(sData, "TOFF") > 0) And (InStr(sData, "PAUSE") = 0) Then
+    sParts = Split(sData, "@")
+    sParts2 = Split(sParts[1], " ")
+    If (cNodes[sNode].cDeviceStat = Null) Then 
+      cNodes[sNode].cDeviceStat = New Collection
+    Endif
+    cNodes[sNode].cDeviceStat.Remove(sParts2[0])
+    cNodes[sNode].cDeviceStat.Add(sParts2[1], sParts2[0])
+  
+    sData = Replace$(sData, " ", "=")
+    sData = Replace$(sData, "TON", "On")
+    sData = Replace$(sData, "TOFF", "Off")
+    ParseLine(sData)
+    bProcessed = True
+    If (FToolsDomotrixCmdr.Visible) Then
+       FToolsDomotrixCmdr.UpdateStatus
+    Endif
+  Endif 
+  
+  If (Not bProcessed And InStr(sData, "TEMP") > 0) Then
+    sParts = Split(sData, " ")
+    If sParts.Length = 3 Then
+      ParseLine(sParts[1] & "=" & sParts[2])
+      If (cNodes[sNode].cDeviceStat = Null) Then 
+        cNodes[sNode].cDeviceStat = New Collection
+      Endif
+      cNodes[sNode].cDeviceStat.Remove(sParts[1])
+      cNodes[sNode].cDeviceStat.Add(sParts[2], sParts[1])
+      bProcessed = True
+      If (FToolsDomotrixCmdr.Visible) Then
+          FToolsDomotrixCmdr.UpdateStatus
+      Endif
+    End If
+  Endif
+  
+  If (Not bProcessed And InStr(sData, "ABLED") > 0) Then
+    sParts = Split(sData, "@")
+    sParts2 = Split(sParts[1], " ")
+    If (cNodes[sNode].cDeviceConfig = Null) Then 
+      cNodes[sNode].cDeviceConfig = New Collection
+    Endif
+    cNodes[sNode].cDeviceConfig.Remove(sParts2[0])
+    cNodes[sNode].cDeviceConfig.Add(sParts[1], sParts2[0])
+    bProcessed = True
+  Endif
+  
+  If (Not bProcessed And InStr(sData, "DSHIELD") > 0) Then
+    If (Not cNodes[sNode].bHasBoard) Then
+      cNodes[sNode].bHasBoard = True
+      Main.hDB.Exec("UPDATE xbee_nodes SET hasBoard=&1 WHERE alias = &2 AND id = &3", True, cNodes[sNode].sXBeeName, cNodes[sNode].iInstance)
+    Endif 
+    sParts = Split(sData, " ")
+    cNodes[sNode].sBoardVersion = sParts[1]
+    cNodes[sNode].sBoardName = sParts[2]
+    'cNodes[sNode].iStatus = STATUS_CONNECTED_OK
+    If cNodes[sNode].sCurrentCommand = "RECOVERY_1" Then
+      If (cNodes[sNode].sBoardName <> "0") Then
+        If $bDebug Then Main.WriteDebugLog(LogLabel & "Node '" & cNodes[sNode].sXBeeName & "' is working again!.")
+        cNodes[sNode].sCurrentCommand = ""
+      Endif
+    Endif
+    ' In this case, the EEPROM is empty or damaged -> Start autorecovery
+    If (cNodes[sNode].sBoardName == "0" Or cNodes[sNode].sBoardName == "") And cNodes[sNode].sCurrentCommand == "" Then
+      If $bDebug Then Main.WriteDebugLog(LogLabel & "Config data in node '" & cNodes[sNode].sXBeeName & "' is empty or damaged. Starting autorecovery process...")
+      AutoRecoverNode(cNodes[sNode].sXBeeName, cNodes[sNode].sBoardVersion)
+    Else
+      If cNodes[sNode].sCurrentCommand = "" Then
+        Sleep 1
+        Print "load config"
+        LoadConfig(cNodes[sNode].sXBeeName)
+      Endif
+    Endif
+    bProcessed = True
+  Endif
+  
+  If (Not bProcessed And InStr(sData, "STATOK") > 0) Then
+    If (Not cNodes[sNode].bHasBoard) Then
+      cNodes[sNode].bHasBoard = True
+      Main.hDB.Exec("UPDATE xbee_nodes SET hasBoard=&1 WHERE alias = &2 AND id = &3", True, cNodes[sNode].sXBeeName, cNodes[sNode].iInstance)
+    Endif 
+    bProcessed = True
+    cNodes[sNode].sCurrentCommand = ""
+    tTransaction.Stop
+    If (FToolsDomotrixCmdr.visible) Then
+       FToolsDomotrixCmdr.updateGrid
+       If (FProgress.visible) Then
+         FProgress.Close
+       Endif
+    Endif
+    
+    ConnectNextArduino ' In the initial sequence, query config to the next board
+  Endif
+
+  If (Not bProcessed And InStr(sData, "DELOK") > 0) Then
+    If cNodes[sNode].sCurrentCommand = "UPLOAD_EEPROM" Then
+       UploadEEPROMData_next(sCurrentNodeName)
+    Else
+       cNodes[sNode].sCurrentCommand = ""
+    Endif
+    bProcessed = True
+  Endif
+
+  If (Not bProcessed And InStr(sData, "STROK") > 0) Then
+    If cNodes[sNode].sCurrentCommand = "UPLOAD_EEPROM" Then
+       ' Delay to avoid overload the Xbee comm line
+       'Sleep 0.1
+       UploadEEPROMData_next(sCurrentNodeName)
+       bProcessed = True
+    Endif
+  Endif
+
+  If (Not bProcessed And InStr(sData, "ERROR 1") > 0) Then
+    If cNodes[sNode].sCurrentCommand = "UPLOAD_EEPROM" Then
+       ' Delay to avoid overload the Xbee comm line
+       Sleep 0.5
+   '    iMemIndex = iMemIndex - 1
+   '    UploadEEPROMData_next(sCurrentNodeName)
+       bProcessed = True
+    Endif
+  Endif
+
+
+  If (Not bProcessed And InStr(sData, "CFGOK") > 0) Then
+    bProcessed = True
+    tTransaction.Stop
+    cNodes[sNode].sCurrentCommand = ""
+    DomoXBee_GetXbeeData(cNodes[sNode].sXBeeName)
+    Try SendDXCommand(cNodes[sNode], "[STAT]\n")
+    If (FToolsDomotrixCmdr.Visible) Then
+       FToolsDomotrixCmdr.UpdateGrid
+    Endif
+  Endif
+  
+  If (Not bProcessed And InStr(sData, "DATA") > 0) Then
+    sParts = Split(sData, " ")
+    sParts2 = Split(sParts[1], ",")
+    cNodes[sNode].cEEPROMData.Add(sParts2[1], sParts2[0])
+    If (FToolsDomotrixCmdr.Visible) Then
+      FProgress.setProgressBar((sParts2[0] / 800) * 100)
+    Endif
+    bProcessed = True
+  Endif
+
+  If (Not bProcessed And InStr(sData, "RTROK") > 0) Then
+      cNodes[sNode].sCurrentCommand = ""
+      tPoll.Start
+      Try hFile = Open cNodes[sNode].sBackupFile For Write Create
+      If Error Then 
+         Message.Error("Backup file '" & cNodes[sNode].sBackupFile & "' can't be created. " & Error.Text, "OK")
+         Return
+      Endif
+      Print #hFile, "version:" & cNodes[sNode].sBoardVersion
+      For i = 0 To 1023
+        If cNodes[sNode].cEEPROMData.Exist(i) Then
+            Print #hFile, cNodes[sNode].cEEPROMData[i]
+        Else
+            Print #hFile, "0"
+        Endif
+      Next
+      hFile.Close
+      If (FToolsDomotrixCmdr.visible) Then
+          FProgress.Close
+          FToolsDomotrixCmdr.UpdateGrid
+      Endif
+      bProcessed = True
+  Endif
+
+  ' If ERROR message received from node, try to recovery it
+  If (Not bProcessed And InStr(sData, "ERROR") > 0) Then
+     If $bDebug Then Main.WriteDebugLog(LogLabel & "Error received from node '" & cNodes[sNode].sXBeeName & "'. Restarting...")
+     Try ResetNode(cNodes[sNode].sXBeeName) ' Try to recover the node, doing a hw reset
+     Wait 2
+     Try SendDXCommand(cNodes[sNode], "[CONNECT]\n")
+     bProcessed = True
+  Endif
+
+  ' Update node in collection  
+     
+  Catch
+     Print Error.Text
+     'cNodes[sNode].iStatus = STATUS_CONNECTED_ERR
+End
+
+
+' This procedure parse the control messages received from XBee coordinator, 
+' Like network errors or node discovery
+Private Sub XBeeParsing(sData As String)
+  Dim bProcessed As Boolean = False
+  Dim sParts As String[]
+  Dim sParts2 As String[]
+  Dim node As DomotrixNode
+  Dim i As Integer
+
+  sBuffer = Null  ' To clean the TCP Socket input buffer    
+
+  If (Left(sData, 4) = "NODE") Then
+      sParts = Split(sData, " ")
+      XBeeNodeDiscovered(sParts[1], sParts[2])
+      bProcessed = True
+      If (FToolsDomotrixCmdr.visible) Then
+        FToolsDomotrixCmdr.XBeeNodeDiscovered(sParts[1])
+      Endif
+      Main.WriteLog(LogLabel & "Node " & sParts[1] & " discovered.")
+  Endif
+
+  If (Not bProcessed And Left(sData, 4) = "XBEE") Then
+      sParts = Split(sData, " ")
+      node = cNodes[sParts[1]]
+      If (node <> Null) Then
+          If (node.iXBeeIOCfg = Null) Then 
+            node.iXBeeIOCfg = New Integer[6]
+          Endif
+          For i = 2 To sParts.Count - 1
+              sParts2 = Split(sParts[i], "=")
+              If InStr(sParts[i], "DB") > 0 Then
+                  node.iXbeeRSSI = sParts2[1]
+              Endif
+              If InStr(sParts[i], "VR") > 0 Then
+                  node.sXBeeSWVersion = sParts2[1]
+              Endif
+              If InStr(sParts[i], "HR") > 0 Then
+                  node.sXBeeHWVersion = sParts2[1]
+              Endif
+              If InStr(sParts[i], "IR") > 0 Then
+                  node.iXBeeIR = sParts2[1]
+              Endif
+              If InStr(sParts[i], "IC") > 0 Then
+                  node.iXBeeIC = sParts2[1]
+              Endif
+              If InStr(sParts[i], "D0") > 0 Then
+                  node.iXBeeIOCfg[0] = sParts2[1]
+              Endif
+              If InStr(sParts[i], "D1") > 0 Then
+                  node.iXBeeIOCfg[1] = sParts2[1]
+              Endif
+              If InStr(sParts[i], "D2") > 0 Then
+                  node.iXBeeIOCfg[2] = sParts2[1]
+              Endif
+              If InStr(sParts[i], "D3") > 0 Then
+                  node.iXBeeIOCfg[3] = sParts2[1]
+              Endif
+              If InStr(sParts[i], "D4") > 0 Then
+                  node.iXBeeIOCfg[4] = sParts2[1]
+              Endif
+              If InStr(sParts[i], "D5") > 0 Then
+                  node.iXBeeIOCfg[5] = sParts2[1]
+              Endif
+          Next
+      Endif
+      bProcessed = True
+      node.iStatus = STATUS_CONNECTED_OK
+    
+      If (FToolsDomotrixCmdr.visible) Then
+        FToolsDomotrixCmdr.UpdateGrid
+      Endif
+
+      ' If IC value is greater than 0, then the IO ports will be enabled
+      DomoXBee_start_IO_listener(node.sXBeeName)
+
+  Endif
+
+  If (Not bProcessed And InStr(sData, "DISCOVEROK") > 0) Then
+      ConnectNextArduino
+      tPoll.Start
+      tDiscover.Start
+      If (FToolsDomotrixCmdr.visible) Then
+        FToolsDomotrixCmdr.EndDiscovery
+      Endif
+      Main.WriteLog(LogLabel & "End of discovery process")
+      For Each node In cNodes
+         DomoXBee_GetXbeeData(node.sXBeeName)
+      Next
+  Endif
+End
+
+
+Private Sub ConnectNextArduino()
+     Dim node As DomotrixNode
+  
+      For Each node In cNodes
+          If node.bEnabled And node.iStatus = STATUS_DISCOVERED Then
+              Print "CONNECT TO " & node.sXBeeName
+              SendDXCommand(node, "[CONNECT]\n")
+              Exit
+          Endif
+      Next
+End
+
+
+
+Private Sub ParseLine(sData As String)
+
+  Dim aScan, aValueToUpdate As String[]
+  Dim sLine, sAddress, sRegexExpression, sAddressToChange, sValueFields As String
+  Dim iDeviceId, iValueToUpdate, iAddressPosition As Integer
+  Dim rRegex As Regexp
+
+  'If $bDebug Then Main.WriteDebugLog(LogLabel & "Raw Data read '" & sData & "'")
+  'If sData = "." Then Return ' A single "." is a heartbeat message sent every few seconds and does not have any action at the moment.
+  For Each sLine In Split(sData, "\n")
+    sRegexExpression = Replace$($sXBeeRegex, "\\", "\\")  ' Gambas needs the " \ " character in a regex to be doubled to be recognised"
+    ' parse each line
+    ' parse sensor data using the regex for the interface to get the Address field to change
+    rRegex = New Regexp(sLine, sRegexExpression)
+    sAddressToChange = rRegex.text
+    'If $bDebug Then Main.WriteDebugLog(LogLabel & "Data read ('" & sLine & "') with regex ('" & sRegexExpression & "') applied gives AddressToChange of : '" & sAddressToChange & "'")
+
+    ' try to find device with the address from the parsed input data as part of it's address field, and correct interface type.
+    iDeviceId = Devices.FindRegExp("|" & sAddressToChange & "|", InterfaceId, Instance, "XBee", "\"", "\"")
+
+    If Error Then Main.WriteDebugLog(LogLabel & "Could not find a matching device for incomming address :  Looking for '" & sAddressToChange & "' in DeviceId '" & iDeviceId & "'")
+    If iDeviceId Then
+      ' if we have found the device, then retrieve the full address field and then work out the index number of the match
+      ' this is the value field we need to update. ie. if address we are looking for is "temp" and address field in device is |R1|R2|temp|litres|, the we are updating value field 3 in this device.
+      sAddress = Devices.FindAddressForDevice(iDeviceId)
+      aScan = Split(sAddress, "|")
+      iValueToUpdate = aScan.Find(sAddressToChange)
+      iAddressPosition = String.InStr(sLine, sAddressToChange)
+      sValueFields = Mid(sLine, iAddressPosition + Len(sAddressToChange))
+      'If $bDebug Then Main.WriteDebugLog(LogLabel & "Updating iDeviceId '" & iDeviceId & "' Address '" & sAddressToChange & "' to '" & sValueFields & "'")
+
+      aValueToUpdate = Split(sValueFields, $sXBeeDelimiter)
+
+      Select aValueToUpdate.Count
+        Case 1
+          Select iValueToUpdate
+            Case 1
+              Devices.ValueUpdate(iDeviceId, 1, Trim(aValueToUpdate[0]))
+              'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value" & iValueToUpdate & " to '" & Trim(aValueToUpdate[0]) & "'")
+            Case 2
+              Devices.ValueUpdate(iDeviceId, 2, Trim(aValueToUpdate[0]))
+              'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value" & iValueToUpdate & " to '" & Trim(aValueToUpdate[0]) & "'")
+            Case 3
+              Devices.ValueUpdate(iDeviceId, 3, Trim(aValueToUpdate[0]))
+              'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value" & iValueToUpdate & " to '" & Trim(aValueToUpdate[0]) & "'")
+            Case 4
+              Devices.ValueUpdate(iDeviceId, 4, Trim(aValueToUpdate[0]))
+              'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value" & iValueToUpdate & " to '" & Trim(aValueToUpdate[0]) & "'")
+            Default
+              Main.WriteDebugLog(LogLabel & "Unknown value to update :" & iValueToUpdate)
+        End Select
+        Case 2
+          Devices.ValueUpdate(iDeviceId, 1, Trim(aValueToUpdate[0]))
+          Devices.ValueUpdate(iDeviceId, 2, Trim(aValueToUpdate[1]))
+          'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value1:'" & Trim(aValueToUpdate[0]) & "' Value2:'" & Trim(aValueToUpdate[1]) & "'")
+        Case 3
+          Devices.ValueUpdate(iDeviceId, 1, Trim(aValueToUpdate[0]))
+          Devices.ValueUpdate(iDeviceId, 2, Trim(aValueToUpdate[1]))
+          Devices.ValueUpdate(iDeviceId, 3, Trim(aValueToUpdate[2]))
+          'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value1:'" & Trim(aValueToUpdate[0]) & "' Value2:" & Trim(aValueToUpdate[1]) & "' Value3:'" & Trim(aValueToUpdate[2]) & "'")
+        Case 4
+          Devices.ValueUpdate(iDeviceId, 1, Trim(aValueToUpdate[0]))
+          Devices.ValueUpdate(iDeviceId, 2, Trim(aValueToUpdate[1]))
+          Devices.ValueUpdate(iDeviceId, 3, Trim(aValueToUpdate[2]))
+          Devices.ValueUpdate(iDeviceId, 4, Trim(aValueToUpdate[3]))
+          'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value1:'" & Trim(aValueToUpdate[1]) & "' Value2:'" & Trim(aValueToUpdate[1]) & "' Value3:'" & Trim(aValueToUpdate[2]) & "' Value4:'" & Trim(aValueToUpdate[3]) & "'")
+        Case 5
+          Devices.ValueUpdate(iDeviceId, 1, Trim(aValueToUpdate[0]))
+          Devices.ValueUpdate(iDeviceId, 2, Trim(aValueToUpdate[1]))
+          Devices.ValueUpdate(iDeviceId, 3, Trim(aValueToUpdate[2]))
+          Devices.ValueUpdate(iDeviceId, 4, Trim(aValueToUpdate[3]))
+          'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Value1:'" & Trim(aValueToUpdate[1]) & "' Value2:'" & Trim(aValueToUpdate[1]) & "' Value3:'" & Trim(aValueToUpdate[2]) & "' Value4:'" & Trim(aValueToUpdate[3]) & "'")
+          'If $bDebug Then Main.WriteDebugLog(LogLabel & "Update Battery:'" & Trim(aValueToUpdate[4]) & "'")
+          Devices.Battery(iDeviceId, Trim(aValueToUpdate[4]))
+        Default
+          'If $bDebug Then Main.WriteDebugLog(LogLabel & "Unknown value to update :" & aValueToUpdate.Count)
+          Return
+      End Select
+   Endif
+
+Catch
+  If $bDebug Then Main.WriteDebugLog(LogLabel & "ERROR: Parsing data packet: '" & sLine & "' '" & Error.Text & "' at '" & Error.Where & "'")
+  
+Next
+
+End
+
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+' called from devices module to send a command to XBee network
+'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Public Sub SendCommand(sAddress As String, sCmd As String)
+
+  Dim sRawCmd As String
+  Dim sNode As String
+  Dim sDevice As String
+  Dim pos As Integer
+
+  ' Replace control characters in the string if present with actual values
+  pos = InStr(sAddress, "@")
+  
+  If (pos > 0) Then
+    sNode = Left$(sAddress, pos - 1) & Null
+    sNode = Replace$(sNode, "|", "")
+    sDevice = Right(sAddress, Len(sAddress) - pos)
+    sDevice = Replace$(sDevice, "=|", "")
+  Endif
+
+  sRawCmd = "[" & sDevice & " " & Upper$(sCmd) & "]\n"
+  
+  ' send the message to the serial port
+  If $bDebug Then Main.WriteDebugLog(LogLabel & "SendCommand '" & sCmd & "' to XBee as '" & sRawCmd & "'")
+  SendDXCommand(cNodes[sNode], sRawCmd)
+  If Error Then Main.WriteDebugLog(LogLabel & "Error sending data to the XBee network! -> " & Error.Text)
+ 
+End
+

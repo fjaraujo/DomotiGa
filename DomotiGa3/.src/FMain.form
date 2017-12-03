@@ -301,6 +301,9 @@
       Text = ("CUL")
       Picture = Picture["icons/bus.png"]
     }
+    { MenuInterfacesDomotrix Menu
+      Text = ("Domotrix")
+    }
     { MenuSettingsDMXPlayer Menu
       Text = ("DMXPlayer")
     }
@@ -700,6 +703,9 @@
     { MenuToolsHomeMaticQuickSet Menu
       Text = ("HomeMatic QuickSet")
       Picture = Picture["icons/wire.png"]
+    }
+    { MenuToolsDomotrixCmdr Menu
+      Text = ("Domotrix Commander")
     }
   }
   { MenuHelp Menu

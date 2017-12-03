@@ -1,0 +1,1503 @@
+' Gambas class file
+
+Private cDomotrix As New Collection
+Private curInstance As Object
+Private curNode As Object
+Private curRow As Integer
+Private vInstances As Integer[]
+  
+Private vEnabledFunctions As New String[]      ' Enabled functions On selected device
+Private vAvailableDINFunctions As New String[] 
+Private vAvailableDOUTFunctions As New String[]
+Private vAvailableAINFunctions As New String[]
+
+Private lampsAutoOff As Integer[] = [0, 60, 180, 300, 900, 1800, 3600, 7200, 10800, 14400, 28800, 86400]
+
+Private iDiscoveryIndex As Integer  ' This index is used during discovery process, to get all the instances in sequence
+
+
+Public Sub Form_Open()
+  Dim i As Integer
+  
+  Me.Move(FMain.X + 50, FMain.Y + 70)
+  
+   If Not Plugin.IsPluginEnabled("Domotrix") Then
+    Message.Info(("XBee interface is not enabled"))
+    Try Me.Close
+    Return
+  Endif
+  
+  vInstances = Plugin.GetPluginEnabledList("Domotrix")
+  
+  For i = 0 To vInstances.count - 1
+    cDomotrix.Add(Plugin.GetPluginObject("Domotrix", vInstances[i]).Interface, vInstances[i])
+  Next
+  
+ If Error Then
+    Print "ERROR"
+ End If
+
+ curRow = 0
+ UpdateGrid
+    
+End
+
+Public Sub UpdateGrid()
+  Dim node As Object
+  Dim i As Integer
+ 
+  gridNetwork.Clear
+  ' load gridNetwork
+  gridNetwork.Columns.Count = 8
+  gridNetwork.Rows.Count = 0
+  gridNetwork.Columns[0].Width = 20
+  gridNetwork.Columns[0].text = "#"
+  gridNetwork.Columns[1].Width = 100
+  gridNetwork.Columns[1].text = "Alias"
+  gridNetwork.Columns[2].Width = 90
+  gridNetwork.Columns[2].text = "Address"
+  gridNetwork.Columns[3].Width = 70
+  gridNetwork.Columns[3].text = "Type"
+  gridNetwork.Columns[4].Width = 40
+  gridNetwork.Columns[4].text = "Board"
+  gridNetwork.Columns[5].Width = 95
+  gridNetwork.Columns[5].text = "Last discovered"
+  gridNetwork.Columns[6].Width = 40 
+  gridNetwork.Columns[6].text = "RSSI"
+  gridNetwork.Columns[7].Width = 60 
+  gridNetwork.Columns[7].text = "Status"
+ 
+  ' Load grid with available nodes
+  For i = 0 To vInstances.Count - 1
+     For Each node In cDomotrix[vInstances[i]].cNodes
+         addRow(node)
+     Next   
+  Next
+ 
+  ' It there are contents, select the first element
+  If gridNetwork.Rows.count > 0 Then
+     gridNetwork.Rows[curRow].Selected = True
+     loadSelectedNode
+  Endif
+End
+
+
+Public Sub addRow(node As Object)
+  Dim row As Integer
+  Dim rssi As Integer
+  
+
+  gridNetwork.Rows.count = gridNetwork.Rows.Count + 1
+  row = gridNetwork.Rows.count - 1
+  
+  gridNetwork[row, 0].Text = node.iInstance
+  If (node.sType = "XBee") Then
+    gridNetwork[row, 1].Text = node.sXBeeName
+    gridNetwork[row, 2].Text = node.sXbeeAddr 
+  Else 
+    gridNetwork[row, 1].Text = node.sAlias
+    gridNetwork[row, 2].Text = node.sIPAddress
+  End If
+  
+  If node.bHasBoard Then
+    gridNetwork[row, 3].Text = "DX Node"
+    gridNetwork[row, 4].Text = node.sBoardVersion
+  Else
+    gridNetwork[row, 3].Text = "XB Router"
+    gridNetwork[row, 4].Text = "N/A"   
+  End If
+  
+  gridNetwork[row, 5].Text = Format$(node.dLastDiscovered, "dd/mm/yyyy hh:nn")
+
+  If (node.stype = "XBee" And node.iXbeeRSSI > 0) Then
+    rssi = 100 - node.iXbeeRSSI + 26
+    gridNetwork[row, 6].Text = rssi & "%"
+  Endif
+  
+  
+  If (Not node.bEnabled) Then
+    gridNetwork[row, 7].Foreground = Color.DarkYellow
+    gridNetwork[row, 7].Text = "DISABLED"
+  Else
+    If (node.iStatus = 0) Then
+      gridNetwork[row, 7].Foreground = Color.DarkGreen
+      gridNetwork[row, 7].Text = "OK"
+    Endif
+    If (node.iStatus = 1)
+      gridNetwork[row, 7].Foreground = Color.Red
+      gridNetwork[row, 7].Text = "ERROR"
+    Endif
+    If (node.iStatus = 2)
+      gridNetwork[row, 7].Foreground = Color.Cyan
+      gridNetwork[row, 7].Text = "DISCOVERED"
+    Endif  
+    If (node.iStatus = 3)
+      gridNetwork[row, 7].Foreground = Color.DarkYellow
+      gridNetwork[row, 7].Text = "DISCONNECTED"
+    Endif  
+  Endif
+End
+
+
+' Update tab contets with the selected node
+Public Sub loadSelectedNode()
+   Dim sConfig As String
+   Dim c As Control
+   Dim cmb As ComboBox
+   Dim sw As SwitchButton
+   Dim i As Integer
+   Dim sFunctionId As String
+   Dim sBackup As String
+   Dim hFile As File
+   Dim aux As String
+   
+   disable_all
+   
+   curRow = gridNetwork.Rows.Selection[0]
+   curInstance = cDomotrix[gridNetwork[curRow, 0].text]
+   curNode = curInstance.cNodes[gridNetwork[curRow, 1].text]
+ 
+   txtDeviceName.text = curNode.sXBeeName
+
+   If curNode.bEnabled And curNode.bHasBoard And curNode.iStatus <> curInstance.STATUS_DISCONNECTED Then
+     lblNodeName.text = curNode.sXBeeName & " (version: " & curNode.sBoardVersion & ")"
+     If (curNode.sType = "XBee") Then
+        btnDisable.Enabled = True
+     End If
+     TabMain.Enabled = True
+     TabConfig.Enabled = True
+   Else
+     If (curNode.sType = "XBee") Then
+        btnEnable.Enabled = True
+     Endif
+     TabMain.Enabled = False
+     TabConfig.Enabled = False
+   Endif
+   
+   If (curNode.sType = "XBee") Then
+      btnDeleteNode.Enabled = True
+   Endif
+  
+   If Not TabMain.Enabled Then Return
+  
+   If (curNode.bHasBoard) Then
+   ' Set file with default EEPROM values
+     dirEEPROMLoad.Value = Main.sBaseDir &/ "domotrix/EEPROM_v" & curNode.sBoardVersion & ".data"
+   ' Search the EEPROM backup file
+     sBackup = Main.sBaseDir &/ "domotrix/" & curNode.sXBeeName & ".data"
+     Try hFile = Open sBackup For Input
+     If Error Then
+        lblLastBackup.text = "No backup!"
+     Else 
+        hFile.Close
+        lblLastBackup.text = Format$(Stat(sBackup).LastModified, "dd/mm/yyyy hh:nn")
+     Endif
+     dirEEPROMRestore.Value = sBackup
+   Endif
+   
+   
+   If (IsNull(curNode.cDeviceConfig)) Then
+      Return
+   Endif
+      
+   vAvailableAINFunctions.Clear
+   vAvailableDINFunctions.Clear
+   vAvailableDOUTFunctions.Clear
+   vEnabledFunctions.Clear
+   
+   ' Load vAvailablexxxFunctions vectors with the functions found at device config array
+   For Each sConfig In curNode.cDeviceConfig
+       sFunctionId = getConfigProperty(sconfig, "FUNCTION_ID")
+      
+       If (InStr(sFunctionId, "RELAY") > 0) Then
+          vAvailableDOUTFunctions.Add(sFunctionId)
+       Endif
+      
+       If (InStr(sFunctionId, "BUTT") > 0) Then
+          vAvailableDINFunctions.Add(sFunctionId)
+       Endif
+      
+       If (InStr(sFunctionId, "LAMP") > 0) Then
+          vAvailableDINFunctions.Add(sFunctionId & " (IN)")
+          vAvailableDOUTFunctions.Add(sFunctionId & " (OUT)")
+       Endif
+    
+       If (InStr(sFunctionId, "BLIND") > 0) Then
+          vAvailableDINFunctions.Add(sFunctionId & " (UP IN)")
+          vAvailableDINFunctions.Add(sFunctionId & " (DOWN IN)")
+          vAvailableDOUTFunctions.Add(sFunctionId & " (UP OUT)")
+          vAvailableDOUTFunctions.Add(sFunctionId & " (DOWN OUT)")
+       Endif
+     
+       If (InStr(sFunctionId, "WATER") > 0) Then
+          vAvailableAINFunctions.Add(sFunctionId)
+       Endif
+  
+       If (InStr(sFunctionId, "TEMP") > 0) Then
+          vAvailableDINFunctions.Add(sFunctionId)
+       Endif
+  
+       If (InStr(sFunctionId, "PIR") > 0) Then
+          vAvailableDINFunctions.Add(sFunctionId)
+       Endif
+  
+       If (InStr(sFunctionId, "GAS") > 0) Then
+          vAvailableAINFunctions.Add(sFunctionId)
+       Endif
+       ' Detect if the function is enabled   
+       If (getConfigProperty(sConfig, "ENABLED") = "True") Then
+           vEnabledFunctions.Add(getConfigProperty(sconfig, "FUNCTION_ID"))
+       Endif
+   Next
+   
+   ' Load all the available functions in the combos of Function tab
+   For Each c In TabConfig[1].Children 
+      If (InStr(c.name, "cmb")) Then
+        cmb = c
+        If (InStr(c.name, "DIN") > 0) Then
+            cmb.Clear
+            cmb.Add(" ")
+            cmb.Index = 0
+            For i = 0 To vAvailableDINFunctions.count - 1
+              If (vAvailableDINFunctions[i] <> "PIR" And vAvailableDINFunctions[i] <> "TEMP") Then
+                cmb.Add(vAvailableDINFunctions[i])
+              End If
+            Next
+        Endif
+        If (InStr(c.name, "DOUT") > 0) Then
+            cmb.Clear
+            cmb.Add(" ")
+            cmb.index = 0
+            For i = 0 To vAvailableDOUTFunctions.count - 1
+              cmb.Add(vAvailableDOUTFunctions[i])
+            Next
+        Endif
+        If (InStr(c.name, "AIN") > 0) Then
+            cmb.Clear
+            cmb.Enabled = True
+            cmb.Add(" ")
+            cmb.index = 0
+            For i = 0 To vAvailableAINFunctions.count - 1
+              cmb.Add(vAvailableAINFunctions[i])
+            Next
+        Endif    
+      Endif
+   Next
+   
+   ' Hide device config tabs
+   For i = 2 To TabConfig.count - 1
+     TabConfig[i].Visible = False
+   Next
+   
+   swFunPirSensor.Enabled = vAvailableDINFunctions.Exist("PIR")
+   swFunTempSensor.Enabled = vAvailableDINFunctions.Exist("TEMP")
+   swFunPirSensor.tag = False ' If the function is enabled, tag will be changed to True in the following code
+   swFunTempSensor.tag = False ' If the function is enabled, tag will be changed to True in the following code
+   
+   If vAvailableAINFunctions.Count = 0 Then 
+      cmbFunAIN1.Enabled = False
+  Else
+      cmbFunAIN1.Enabled = True
+  Endif
+   
+   ' Load the enabled functions
+   For i = 0 To vEnabledFunctions.count - 1
+      If (InStr(vEnabledFunctions[i], "RELAY") > 0) Then
+        load_relay(vEnabledFunctions[i])
+      Endif
+      If (InStr(vEnabledFunctions[i], "BUTT") > 0) Then
+        load_button(vEnabledFunctions[i])
+      Endif
+      If (InStr(vEnabledFunctions[i], "LAMP") > 0) Then
+        load_lamp(vEnabledFunctions[i])
+      Endif
+      If (InStr(vEnabledFunctions[i], "BLIND") > 0) Then
+        load_lamp(vEnabledFunctions[i])
+      Endif
+      If (InStr(vEnabledFunctions[i], "TEMP") > 0) Then
+        swFunTempSensor.tag = True
+        load_temp
+      Else
+        swFunTempSensor.tag = False
+      Endif
+      If (InStr(vEnabledFunctions[i], "PIR") > 0) Then
+        swFunPirSensor.tag = True
+        load_pir
+      Else 
+        swFunPirSensor.tag = False
+      Endif
+   Next
+   
+   btnApplyFunctions.Enabled = False
+   
+   ' Enabling functions are only allowed from Board version 6
+   If (curNode.sBoardVersion = "") Then
+     TabConfig[0].Enabled = False
+   Else 
+    If CInt(curNode.sBoardVersion) < 6 Then
+     TabConfig[0].Enabled = False
+    Endif
+   Endif
+   
+   If TabMain.tag <> Null Then
+     TabMain.index = TabMain.tag
+   Endif
+ 
+   If TabConfig.tag <> Null Then
+     TabConfig.index = TabConfig.tag
+   Endif
+   
+   
+   ' Load data in XBee tab 
+   
+   txtXBeeName.Text = curNode.sXBeeName
+   
+   ' IO port config
+   For i = 0 To 5
+    For Each c In TabMain[1].Children 
+        If (InStr(c.name, "cmbXBeeDIO" & i) > 0) Then
+           cmb = c
+           Select curNode.iXBeeIOCfg[i]
+              Case 0 
+                cmb.index = 0
+              Case 3 
+                cmb.index = 1
+              Case 4 
+                cmb.index = 2
+              Case 5 
+                cmb.Index = 2
+            End Select
+        Endif
+    Next
+   Next
+   
+     
+   
+   UpdateStatus
+   
+End
+
+
+Private Sub disable_all()
+ 
+  'TabMain.Enabled = False
+  'TabConfig.Enabled = False
+ 
+  btnDisable.Enabled = False
+  btnApplyFunctions.Enabled = False
+  btnDeleteNode.Enabled = False
+  btnEnable.Enabled = False
+  'btnDiscoverNodes.Enabled = False
+  
+  swRELAY1.Enabled = False
+  swRELAY2.Enabled = False
+  swRELAY3.Enabled = False
+  btnRELAY1.Enabled = False
+  btnRELAY2.Enabled = False
+  btnRELAY3.Enabled = False
+  
+  picBUTT1.Hide
+  picBUTT2.Hide
+  picBUTT3.Hide
+  
+  btnBlind1Up.Enabled = False
+  btnBlind1Down.Enabled = False
+  btnBlind2Up.Enabled = False
+  btnBlind2Down.Enabled = False
+  btnBlind1Plus.Enabled = False
+  btnBlind2Plus.Enabled = False
+  btnBlind1Minus.Enabled = False
+  btnBlind2Minus.Enabled = False
+  
+  lblNodeName.text = ""
+  lcdTemp1.text = ""
+  lcdTemp1.tag = ""
+  lcdTemp2.tag = ""
+  lcdTemp2.Text = ""
+  txtTemp1Id.text = ""
+  txtTemp2Id.text = ""
+  
+End
+
+
+' Check the collection cDeviceStat of current node and updates the controls in tab "Control"
+Public Sub UpdateStatus()
+  Dim i As Integer
+  Dim status As String
+  Dim value As Boolean
+  Dim c As Control
+  Dim sw As SwitchButton
+  Dim pic As PictureBox
+  
+  If curNode.cDeviceStat = Null Then Return
+  
+  For i = 0 To vEnabledFunctions.count - 1
+      status = curNode.cDeviceStat[vEnabledFunctions[i]]
+      If (status = "TON") Then
+        value = True
+      Else
+        value = False
+      Endif
+      For Each c In TabMain[0].Children 
+       If (InStr(c.name, "sw" & vEnabledFunctions[i]) > 0) Then
+         sw = c
+         sw.tag = "lock"
+         sw.value = value
+         sw.tag = "unlock"
+       Endif
+       If (InStr(c.name, "pic" & vEnabledFunctions[i]) > 0) Then
+         pic = c
+         If (value) Then
+           pic.Show
+         Else
+           pic.Hide
+         Endif
+       Endif
+      Next
+  Next
+End
+
+
+Private Function functions_list(cConfig As Collection) As String
+  Dim sConfig As String
+  Dim result As String
+  
+  For Each sconfig In cConfig
+      result = result & "," & sConfig
+  Next
+  
+  Return Right(result, Len(result) - 1)
+  
+End
+
+
+
+Private Sub load_button(sFunction As String)
+   load_cmbFUN_IN(sFunction)
+   
+    If (Comp(sfunction, "BUTT1") = 0) Then
+       TabConfig[1].visible = True
+    Endif
+    If (Comp(sfunction, "BUTT2") = 0) Then
+       TabConfig[2].visible = True
+    Endif
+    If (Comp(sfunction, "BUTT3") = 0) Then
+       TabConfig[3].visible = True
+    Endif
+End
+
+
+Private Sub load_relay(sFunction As String)
+    load_cmbFUN_OUT(sFunction)
+    
+    If (Comp(sfunction, "RELAY1") = 0) Then
+       TabConfig[4].visible = True
+       btnRELAY1.Enabled = True
+    Endif
+    If (Comp(sfunction, "RELAY2") = 0) Then
+       TabConfig[5].visible = True
+       btnRELAY2.Enabled = True
+    Endif
+    If (Comp(sfunction, "RELAY3") = 0) Then
+       TabConfig[6].visible = True
+       btnRELAY3.Enabled = True
+    Endif
+    
+End
+
+
+Private Sub load_lamp(sFunction As String)
+    Dim tout As Integer
+    Dim i As Integer
+    Dim o As Object
+    
+    load_cmbFUN_IN(sFunction)
+    load_cmbFUN_OUT(sFunction)
+    
+    If (Comp(sfunction, "LAMP1") = 0) Then
+       TabConfig[7].visible = True
+       tout = getConfigProperty(curNode.cDeviceConfig[sFunction], "TOUT")
+       For i = 0 To lampsAutoOff.Count - 1
+         If lampsAutoOff[i] = tout Then
+           cmbLamp1AutoOff.tag = "lock"
+           cmbLamp1AutoOff.index = i
+           cmbLamp1AutoOff.tag = "unlock"
+         Endif
+       Next
+       cmbLamp1InputMode.tag = "lock"
+       cmbLamp1InputMode.index = getConfigProperty(curNode.cDeviceConfig[sFunction], "MODE")
+       cmbLamp1InputMode.tag = "unlock"
+       btnLAMP1.Enabled = True
+    Endif
+    If (Comp(sfunction, "LAMP2") = 0) Then
+       TabConfig[8].visible = True
+       tout = getConfigProperty(curNode.cDeviceConfig[sFunction], "TOUT")
+       For i = 0 To lampsAutoOff.Count - 1
+         If lampsAutoOff[i] = tout Then
+           cmbLamp2AutoOff.tag = "lock"
+           cmbLamp2AutoOff.index = i
+           cmbLamp2AutoOff.tag = "unlock"
+         Endif
+       Next
+       cmbLamp2InputMode.tag = "lock"
+       cmbLamp2InputMode.index = getConfigProperty(curNode.cDeviceConfig[sFunction], "MODE")
+       cmbLamp2InputMode.tag = "unlock"
+       btnLAMP2.Enabled = True
+    Endif
+    If (Comp(sfunction, "LAMP3") = 0) Then
+       TabConfig[9].visible = True
+       tout = getConfigProperty(curNode.cDeviceConfig[sFunction], "TOUT")
+       For i = 0 To lampsAutoOff.Count - 1
+         If lampsAutoOff[i] = tout Then
+           cmbLamp3AutoOff.tag = "lock"
+           cmbLamp3AutoOff.index = i
+           cmbLamp3AutoOff.tag = "unlock"
+         Endif
+       Next
+       cmbLamp3InputMode.tag = "lock"
+       cmbLamp3InputMode.index = getConfigProperty(curNode.cDeviceConfig[sFunction], "MODE")
+       cmbLamp3InputMode.tag = "unlock"
+       btnLAMP3.Enabled = True
+    Endif
+End
+
+
+Private Sub load_blind(sFunction As String)
+    
+    load_cmbFUN_IN(sFunction)
+    load_cmbFUN_OUT(sFunction)
+    
+    If (Comp(sfunction, "BLIND1") = 0) Then
+       TabConfig[10].visible = True
+    Endif
+    If (Comp(sfunction, "BLIND2") = 0) Then
+       TabConfig[11].visible = True
+    Endif
+    
+End
+
+Private Sub load_temp()
+  
+  swFunTempSensor.Value = True
+  TabConfig[12].visible = True
+ 
+  
+End
+
+Private Sub load_pir()
+  
+  swFunPirSensor.Value = True
+  
+End
+
+
+Private Sub load_cmbFUN_IN(sFunction As String)
+    Dim sINPort As String 
+     Dim c As Control
+     Dim cmb As ComboBox
+     Dim index As Integer
+    
+     ' Select the function at right combo in I/O Functions Tab
+     sINPort = getConfigProperty(curNode.cDeviceConfig[sFunction], "IN_PORT")
+     For Each c In TabConfig[0].Children 
+       If (Comp(c.name, "cmbFUN" & sINPort, 1) = 0) Then
+         cmb = c
+         index = cmb.Find(sFunction)
+         If (index = -1) Then
+           index = cmb.Find(sFunction & " (IN)")
+         Endif
+         If (index > -1) Then
+           cmb.Index = Index
+         End If 
+         cmb.tag = cmb.text
+       Endif
+     Next
+End
+
+Private Sub load_cmbFUN_OUT(sFunction As String)
+     Dim sOUTPort As String 
+     Dim c As Control
+     Dim cmb As ComboBox
+     Dim index As Integer
+    
+     ' Select the function at right combo in I/O Functions Tab
+     sOUTPort = getConfigProperty(curNode.cDeviceConfig[sFunction], "OU_PORT")
+     For Each c In TabConfig[0].Children 
+       If (Comp(c.name, "cmbFUN" & sOUTPort, 1) = 0) Then
+         cmb = c
+         index = cmb.Find(sFunction)
+         If (index = -1) Then
+           index = cmb.Find(sFunction & " (OUT)")
+         Endif
+         If (index > -1) Then
+           cmb.Index = Index
+         End If 
+         cmb.tag = cmb.Text
+       Endif
+     Next
+End
+
+
+Private Function getConfigProperty(sConfig As String, sProperty As String) As String
+Dim aux As String[]
+Dim aux2 As String[]
+Dim i As Integer
+
+sConfig = Replace(sConfig, "[", "")
+sConfig = Replace(sConfig, "]", "")
+
+aux = Split(sConfig, " ")
+
+If (sProperty = "FUNCTION_ID") Then
+  Return aux[0]
+Endif
+If (sProperty = "ENABLED") Then
+  If (InStr(sConfig, "DISABLED") > 0) Then  
+     Return "False"
+  Else
+     Return "True"
+  Endif
+Endif
+For i = 0 To aux.count - 1
+  If (InStr(aux[i], sProperty) > 0) Then
+     aux2 = Split(aux[i], "=")
+     Return aux2[1]
+  Endif
+Next
+
+Return "0"
+
+Catch
+    Print "ERROR"  ' Aquí se produce un error grave en la placa, que debería generar una operación de RESTORE
+
+End Function
+
+
+' Receives a message from the network and shows it on the console
+Public Sub newMessage(sMsg As String)
+  txtConsole.Insert(sMsg)
+  txtConsole.Insert(gb.Cr)
+End
+
+
+
+Public Sub btnConnect_Click()
+  Dim result As Boolean
+  If curInstance.isRunning Then
+      result = curInstance.SendDXCommand(curNode, "[CONNECT]\n")
+      If (result <> 0) Then
+        Message.Error("Node '" & curNode.sXBeeName & "' is not available. ERROR: " & result)
+      Endif
+  End If
+ 
+End
+
+Public Sub btnConfig_Click()
+  Dim result As Boolean
+  
+  If curInstance.isRunning Then
+    result = curInstance.LoadConfig(curNode.sXBeeName)
+      If (result = False) Then
+        Message.Error("Node '" & curNode.sXBeeName & "' is not available)")
+      Endif
+  End If
+
+End
+
+Public Sub btnSend_Click()
+  Dim result As Boolean
+  
+  If curInstance.isRunning Then
+     result = curInstance.SendDXCommand(curNode, txtCmd.Text & "\n")
+     If (result <> 0) Then
+        Message.Error("Node '" & curNode.sXBeeName & "' is not available. ERROR: " & result)
+     Endif
+  End If
+
+End
+
+
+Public Sub btnEEPROM_Load_Click()
+  Dim response As Integer
+
+  response = Message.Question("Do you want to load EEPROM of " & curNode.sXBeeName & " using file '" & Me.dirEEPROMLoad.Value & "'?", "Cancel", "Continue")
+
+  If (response == 2) Then
+        FProgress.Caption = "Setting EEPROM to default values"
+        curInstance.UploadEEPROMData_first(curNode.sXBeeName, Me.dirEEPROMLoad.Value)
+  End If
+
+End
+
+
+Public Sub TabMain_Click()
+
+  TabMain.tag = TabMain.Index
+End
+
+Public Sub btnClose_Click()
+
+  Me.Close
+
+End
+
+Public Sub gridNetwork_Select()
+
+  TabConfig.Enabled = True
+  loadSelectedNode
+
+End
+
+
+
+Public Sub btnClear_Click()
+
+  txtConsole.Clear
+
+End
+
+Public Sub btnReset_Click()
+
+  curInstance.resetNode(curNode.sXBeeName)
+
+End
+
+Public Sub btnEEPROM_Restore_Click()
+  Dim response As Integer
+
+  response = Message.Question("Do you want to restore EEPROM of " & curNode.sXBeeName & " using backup file '" & Me.dirEEPROMRestore.Value & "'?", "Cancel", "Continue")
+
+  If (response = 2) Then
+        FProgress.Caption = "Restoring EEPROM from backup file"
+        curInstance.UploadEEPROMData_first(curNode.sXBeeName, Me.dirEEPROMRestore.Value)
+  End If
+  
+
+End
+
+Public Sub btnEEPROM_Backup_Click()
+  Dim response As Integer
+
+  response = Message.Question("Do you want to backup EEPROM of " & curNode.sXBeeName & " to backup file '" & Me.dirEEPROMRestore.Value & "'?", "Cancel", "Continue")
+
+  If (response = 2) Then
+    FProgress.Caption = "EEPROM Config Backup"
+    FProgress.lblStatus.Text = "Getting data from node " & curNode.sXBeeName & "..."
+    FProgress.setProgressBar(0)
+    FProgress.Show   
+    curInstance.BackupNode(curNode.sXBeeName, Me.dirEEPROMRestore.value)
+  End If
+End
+
+
+Public Sub btnDisable_Click()
+
+    If (Message.Question("Do you want to disable the node " & curNode.sXBeeName & "?", "No", "Yes") = 2) Then
+      curNode.bEnabled = False
+      Main.hDB.Exec("UPDATE xbee_nodes SET enabled=&1 WHERE alias = &2 AND id = &3", False, curNode.sXBeeName, curNode.iInstance)
+      UpdateGrid
+    Endif
+End
+
+Public Sub btnEnable_Click()
+   Dim result As Boolean
+    If (Message.Question("Do you want to enable the node " & curNode.sXBeeName & "?", "No", "Yes") = 2) Then
+      curNode.bEnabled = True
+      If (curNode.bHasBoard) Then
+           If curInstance.isRunning Then
+             result = curInstance.SendDXCommand(curNode, "[CONNECT]\n")
+             If (result <> 0) Then
+                Message.Error("Node '" & curNode.sXBeeName & "' is not available. ERROR: " & result)
+            Endif
+          End If
+      Endif
+      Main.hDB.Exec("UPDATE xbee_nodes SET enabled=&1 WHERE alias = &2 AND id = &3", True, curNode.sXBeeName, curNode.iInstance)
+      UpdateGrid
+    Endif
+End
+
+Public Sub btnDiscoverNodes_Click()
+  
+  iDiscoveryIndex = 0
+  
+  btnDiscoverNodes.Enabled = False
+  
+  FProgress.Caption = "Discovering nodes at XBee networks" 
+  FProgress.Show
+  
+  XBeeNodeDiscoverNext 
+  
+End 
+
+Private Sub XBeeNodeDiscoverNext()
+   Dim found As Boolean = False
+  
+  While (iDiscoveryIndex < vInstances.Count And Not found)
+    If cDomotrix[vInstances[iDiscoveryIndex]].$sType <> "XBee" Then
+      iDiscoveryIndex = iDiscoveryIndex + 1
+    Else
+      found = True
+    End If
+  Wend
+  
+  If (found) Then
+    FProgress.setProgressBar(0)
+    FProgress.lblStatus.text = "Sending discovery signal to the network #" & vInstances[iDiscoveryIndex] & "..."
+    tProgress.Delay = (cDomotrix[vInstances[iDiscoveryIndex]].$iDiscoveryTimeout / 10) * 1000
+    tProgress.Start
+    cDomotrix[vInstances[iDiscoveryIndex]].Discover()
+  Else
+    FProgress.Close
+    btnDiscoverNodes.Enabled = True
+  Endif  
+End
+
+
+
+Public Sub XBeeNodeDiscovered(alias As String)
+    
+  FProgress.lblStatus.Text = "Node " & alias & " discovered"  
+
+End
+
+
+' Is called from CDomotrix when the message [DISCOVEROK] is received at current XBee network
+Public Sub EndDiscovery()
+  
+  iDiscoveryIndex = iDiscoveryIndex + 1
+  FProgress.lblStatus.Text = "Updating node config..."
+  XBeeNodeDiscoverNext
+End
+
+
+
+Public Sub btnDeleteNode_Click()
+   Dim result As Boolean
+   Dim msg As String
+   
+   If (curNode.iStatus = 0) Then
+     msg = "The selected " & curNode.sXBeeName & " node is connected and running. Do you want to delete it? (it will be added to the database in further discovery process if it remains connected)"
+   Else 
+     msg = "Do you want to DELETE the node " & curNode.sXBeeName & "?"
+   Endif
+   
+    If (Message.Question(msg, " No ", " Yes ") = 2) Then 
+      Main.hDB.Exec("DELETE FROM xbee_nodes WHERE alias = &1 AND id = &2", curNode.sXBeeName, curNode.iInstance)
+      cDomotrix[curNode.iInstance].cNodes.remove(curNode.sXbeeName)
+      If (curRow > 0) Then
+        curRow = curRow - 1
+      Endif
+      UpdateGrid
+    Endif
+
+End
+
+
+
+
+Public Sub btnApplyFunctions_Click()
+  Dim vToDisable As New String[]  'list with the functions to disable when user changes the configuratuion
+  Dim vToEnable As New String[]   'list with the functions to enable when user changes the configuration 
+  Dim vCheckDIN As New String[]   'to perform several checks before apply changes
+  Dim vCheckDOUT As New String[]   'to perform several checks before apply changes
+  Dim vDigitalIn As String[] = ["cmbFunDIN1", "cmbFunDIN2", "cmbFunDIN3", "cmbFunDIN4"]
+  Dim vDigitalOut As String[] = ["cmbFunDOUT1", "cmbFunDOUT2", "cmbFunDOUT3", "cmbFunDOUT4"]
+  Dim vInFunctions As String[] = ["BUTT1", "BUTT2", "BUTT3"]
+  Dim vOutFunctions As String[] = ["RELAY1", "RELAY2", "RELAY3"]
+  Dim vInOutFunctions As String[] = ["LAMP1", "LAMP2", "LAMP3", "BLIND1", "BLIND2"]
+  Dim c As Control
+  Dim cmb As ComboBox
+  Dim cmd As String 
+  Dim port As Integer
+  Dim i As Integer
+  
+  vToDisable.Clear
+  vToEnable.Clear
+  vCheckDIN.Clear
+  vCheckDOUT.Clear
+  
+  ' 1- Check if some function is assigned to two or more ports
+  For i = 0 To vDigitalIn.Count - 1
+      For Each c In TabConfig[0].Children
+        If (c.name = vDigitalIn[i]) Then
+          cmb = c
+          If (cmb.Text <> " ") Then
+            If (vCheckDIN.Exist(cmb.Text)) Then
+                Message.Error("Function " & cmb.Text & " can not be assigned to 2 ports at same time.")
+                Return
+            Else
+                vCheckDIN.Add(cmb.Text)
+            Endif
+          Endif
+          If (cmb.Text <> cmb.Tag And cmb.Tag <> Null) Then
+            cmd = Replace(cmb.Tag, " (IN)", "")
+            cmd = "[" & cmd & " DISABLE]"
+            If (Not vToDisable.Exist(cmd)) Then
+              vToDisable.Add(cmd)
+            Endif 
+          Endif 
+        Endif
+      Next
+  Next
+  For i = 0 To vDigitalOut.Count - 1
+      For Each c In TabConfig[0].Children
+        If (c.name = vDigitalOut[i]) Then
+          cmb = c
+          If (cmb.Text <> " ") Then
+            If (vCheckDOUT.Exist(cmb.Text)) Then
+                Message.Error("Function " & cmb.Text & " can not be assigned to 2 ports at same time.")
+                Return
+            Else
+                vCheckDOUT.Add(cmb.Text)
+            Endif
+          Endif
+          If (cmb.Text <> cmb.Tag And cmb.tag <> Null) Then
+            cmd = Replace(cmb.Tag, " (OUT)", "")
+            cmd = "[" & cmd & " DISABLE]"
+            If (Not vToDisable.Exist(cmd)) Then
+              vToDisable.Add(cmd)
+            Endif
+          End If
+        Endif
+      Next
+  Next
+  
+  ' 2- Check the functions with IN and OUT ports are well assigned
+  For i = 0 To vInOutFunctions.Count - 1
+    If (vCheckDIN.Exist(vInOutFunctions[i] & "*", gb.Like) And Not vCheckDOUT.Exist(vInOutFunctions[i] & "*", gb.Like)) Or (Not vCheckDIN.Exist(vInOutFunctions[i] & "*", gb.Like) And vCheckDOUT.Exist(vInOutFunctions[i] & "*", gb.Like)) Then
+       Message.Error("It is mandatory to assign IN and OUT port to function " & vInOutFunctions[i])
+       Return
+    Endif
+  Next
+  
+  ' Change IN ports
+  ' In functions with only 1 IN port
+  For i = 0 To vInFunctions.Count - 1
+     For Each c In TabConfig[0].Children
+        If (Left(c.name, 3) = "cmb") Then
+          cmb = c
+          If (cmb.Text = vInFunctions[i]) Then
+            If (cmb.Tag <> cmb.Text) Then
+                port = CInt(Replace(cmb.name, "cmbFunDIN", "")) 
+                cmd = "[" & cmb.Text & " IN_PORT DIG(" & port & ")]"
+                vToEnable.Add(cmd)
+            Endif
+          Endif
+        Endif
+     Next
+  Next
+  ' In functions with IN and OUT ports
+  For i = 0 To vInOutFunctions.Count - 1
+     For Each c In TabConfig[0].Children
+        If (Left(c.name, 3) = "cmb") Then
+          cmb = c
+          If (InStr(cmb.Text, vInOutFunctions[i]) > 0 And InStr(c.Name, "DIN") > 0) Then
+            cmb = c
+            If (cmb.Tag <> cmb.Text) Then
+                port = CInt(Replace(cmb.name, "cmbFunDIN", "")) 
+                cmd = Replace(cmb.Text, " (IN)", "")
+                cmd = "[" & cmd & " IN_PORT DIG(" & port & ")]"
+                vToEnable.Add(cmd)
+            Endif
+          Endif
+        Endif
+     Next
+  Next
+  
+  
+  ' Change OUT ports
+  ' In functions with only 1 OUT port
+  For i = 0 To vOutFunctions.Count - 1
+     For Each c In TabConfig[0].Children
+        If (Left(c.name, 3) = "cmb") Then
+          cmb = c
+          If (cmb.Text = vOutFunctions[i]) Then
+            If (cmb.Tag <> cmb.Text) Then
+                port = CInt(Replace(cmb.name, "cmbFunDOUT", "")) 
+                cmd = "[" & cmb.Text & " OU_PORT DIG(" & port & ")]"
+                vToEnable.Add(cmd)
+            Endif
+          Endif
+        Endif
+     Next
+  Next
+  ' In functions with IN and OUT ports
+  For i = 0 To vInOutFunctions.Count - 1
+     For Each c In TabConfig[0].Children
+        If (Left(c.Name, 3) = "cmb") Then
+          cmb = c
+          If (InStr(cmb.Text, vInOutFunctions[i]) > 0 And InStr(c.Name, "DOUT") > 0) Then
+            If (cmb.Tag <> cmb.Text) Then
+                port = CInt(Replace(cmb.name, "cmbFunDOUT", "")) 
+                cmd = Replace(cmb.text, " (OUT)", "")
+                cmd = "[" & cmd & " OU_PORT DIG(" & port & ")]"
+                vToEnable.Add(cmd)
+            Endif
+          Endif
+        Endif
+     Next
+  Next
+  
+  ' Finally, add enable for new functions
+  For Each c In TabConfig[0].Children
+     If (Left(c.Name, 3) = "cmb") Then
+       cmb = c
+       If (cmb.Tag <> cmb.Text And cmb.Text <> " ") Then
+          cmd = Replace(cmb.Text, " (IN)", "")
+          cmd = Replace(cmd, " (OUT)", "")
+          cmd = "[" & cmd & " ENABLE]"
+          If (Not vToEnable.Exist(cmd)) Then
+            vToEnable.Add(cmd)
+          End If
+       Endif
+       If (cmb.Tag <> cmb.Text) Then  ' <--- check this!!
+          If (cmb.text = " ") Then
+              cmb.Tag = Null
+          Else
+              cmb.Tag = cmb.Text
+          Endif
+       Endif
+     Endif
+  Next
+  
+  ' Now PIR and TEMP
+  If swFunPirSensor.Tag <> swFunPirSensor.Value Then
+    If swFunPirSensor.tag = False Then
+      vToEnable.add("[PIR ENABLE]")
+      swFunPirSensor.tag = True
+    Else
+      vToDisable.add("[PIR DISABLE]")
+      swFunPirSensor.tag = False
+    Endif
+  Endif
+ 
+ If swFunTempSensor.Tag <> swFunTempSensor.Value Then
+    If swFunTempSensor.tag = False Then
+      vToEnable.add("[TEMP ENABLE]")
+      swFunTempSensor.tag = True
+    Else
+      vToDisable.add("[TEMP DISABLE]")
+      swFunTempSensor.tag = False
+    Endif
+  Endif
+ 
+  If vToDisable.Count = 0 And vToEnable.Count = 0 Then  ' No changes to apply
+    Return
+  Endif
+  
+  ' Now everything is ok, ready to update
+  'If (Message.Question("Do you want to apply changes?", "Cancel", "Apply") = 1) Then
+  '  Return
+  'Endif
+  
+   btnApplyFunctions.Enabled = False
+
+  
+  'Execute Disable Commands
+  curInstance.tPoll.Stop
+  curNode.sCurrentCommand = "CONFIG"
+  curInstance.tTransaction.Start
+  For i = 0 To vToDisable.Count - 1
+    Print vToDisable[i]
+    curInstance.SendDXCommand(curNode, vToDisable[i] & "\n")
+    Wait 0.5
+  Next
+  'Execute Enable Commands
+  For i = 0 To vToEnable.Count - 1
+    Print vToEnable[i]
+    curInstance.SendDXCommand(curNode, vToEnable[i] & "\n")
+    Wait 0.5
+  Next
+  curNode.sCurrentCommand = ""
+  curInstance.tTransaction.Stop
+  curInstance.tPoll.Start
+  
+  ' Finally, upgrade the grid and disable the button
+  'curInstance.LoadConfig(curNode.sXBeeName)
+     
+End
+
+Public Sub tProgress_Timer()
+
+  FProgress.setProgressBar((FProgress.ProgressBarStatus.Value * 100) + 10)
+
+End
+
+
+Public Sub cmbFunDIN1_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDIN2_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDIN3_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDIN4_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDOUT1_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDOUT2_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDOUT3_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunDOUT4_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub swFunTempSensor_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub swFunPirSensor_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+Public Sub cmbFunAIN1_Click()
+
+  btnApplyFunctions.Enabled = True
+
+End
+
+
+Public Sub btnStat_Click()
+
+  curInstance.SendDXCommand(curNode, "[STAT]\n")
+
+End
+
+Public Sub txtTempId3_KeyPress()
+
+  
+
+End
+
+
+Public Sub cmbLamp1AutoOff_Click()
+  
+  If Comp(cmbLamp1AutoOff.tag, "lock") = 0 Then 
+    Return 
+  Endif
+  
+  setLampAutoOff("LAMP1", cmbLamp1AutoOff)
+ 
+End
+
+Public Sub cmbLamp2AutoOff_Click()
+  
+  If Comp(cmbLamp2AutoOff.tag, "lock") = 0 Then 
+    Return 
+  Endif
+  
+  setLampAutoOff("LAMP2", cmbLamp2AutoOff)
+ 
+End
+
+Public Sub cmbLamp3AutoOff_Click()
+    
+ If Comp(cmbLamp3AutoOff.tag, "lock") = 0 Then 
+    Return 
+  Endif
+  
+ setLampAutoOff("LAMP3", cmbLamp3AutoOff)
+ 
+End
+
+
+
+Public Sub btnRelay1_Click()
+
+  
+  If swRELAY1.Value Then
+    curInstance.SendDXCommand(curNode, "[RELAY1 OFF]\n")
+  Else
+    curInstance.SendDXCommand(curNode, "[RELAY1 ON]\n")    
+  Endif
+ 
+
+End
+
+Public Sub btnRelay2_Click()
+
+  
+ If swRELAY2.Value Then
+    curInstance.SendDXCommand(curNode, "[RELAY2 OFF]\n")
+  Else
+    curInstance.SendDXCommand(curNode, "[RELAY2 ON]\n")    
+  Endif
+  
+
+End
+
+Public Sub btnRelay3_Click()
+
+  If swRELAY3.Value Then
+    curInstance.SendDXCommand(curNode, "[RELAY3 OFF]\n")
+  Else
+    curInstance.SendDXCommand(curNode, "[RELAY3 ON]\n")    
+  Endif
+
+End
+
+Public Sub btnLamp1_Click()
+
+ If swLAMP1.Value Then
+    curInstance.SendDXCommand(curNode, "[LAMP1 OFF]\n")
+ Else
+    curInstance.SendDXCommand(curNode, "[LAMP1 ON]\n")    
+ Endif
+
+
+End
+
+Public Sub btnLamp2_Click()
+
+  If swLAMP2.Value Then
+    curInstance.SendDXCommand(curNode, "[LAMP2 OFF]\n")
+  Else
+    curInstance.SendDXCommand(curNode, "[LAMP2 ON]\n")    
+  Endif
+ 
+
+End
+
+Public Sub btnLamp3_Click()
+
+  If swLAMP3.Value Then
+    curInstance.SendDXCommand(curNode, "[LAMP3 OFF]\n")
+  Else
+    curInstance.SendDXCommand(curNode, "[LAMP3 ON]\n")    
+  Endif
+ 
+
+End
+
+Public Sub cmbLamp1InputMode_Click()
+
+ If Comp(cmbLamp1InputMode.tag, "lock") = 0 Then 
+  Return
+ Endif
+ 
+ setLampInputMode("LAMP1", cmbLamp1InputMode) 
+  
+End
+
+Public Sub cmbLamp2InputMode_Click()
+
+ If Comp(cmbLamp2InputMode.tag, "lock") = 0 Then 
+  Return
+ End If
+ 
+ setLampInputMode("LAMP2", cmbLamp2InputMode) 
+  
+End
+
+Public Sub cmbLamp3InputMode_Click()
+
+ If Comp(cmbLamp3InputMode.tag, "lock") = 0 Then 
+  Return
+ End If
+ 
+ setLampInputMode("LAMP3", cmbLamp3InputMode) 
+  
+End
+
+Private Sub setLampInputMode(lamp As String, cmb As ComboBox)
+  
+  curInstance.SendDXCommand(curNode, "[" & lamp & " MODE " & cmb.Index & "]\n")
+ 
+End
+
+Private Sub setLampAutoOff(lamp As String, cmb As ComboBox)
+  
+  Dim high, low As Byte
+  Dim value As Integer
+  
+  value = lampsAutoOff[cmb.Index]
+  high = Lsr(value And &HFF00, 8) 
+  low = value And &HFF
+  curInstance.SendDXCommand(curNode, "[" & lamp & " TOUT(" & high & "," & low & ")]\n")    
+  
+End
+
+
+
+Public Sub TabConfig_Click()
+
+  TabConfig.tag = TabConfig.Index
+
+End
+
+
+Public Sub cmbXBeeDIO0_Click()
+
+  Select cmbXBeeDIO0.Index
+    
+    Case 0 ' Port Disabled
+      swXBeeDIO0.Enabled = False
+      chkXBeeDIO0.Enabled = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 0, 0)
+    Case 1 ' Port as digital input
+      swXBeeDIO0.Enabled = False
+      chkXBeeDIO0.Enabled = True
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 0, 3)
+    Case 2 ' Port as digital output
+      swXBeeDIO0.Enabled = True
+      chkXBeeDIO0.Enabled = False
+      swXBeeDIO0.Value = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 0, 4)
+  End Select
+End
+
+
+Public Sub cmbXBeeDIO1_Click()
+
+   Select cmbXBeeDIO0.Index
+    
+    Case 0 ' Port Disabled
+      swXBeeDIO1.Enabled = False
+      chkXBeeDIO1.Enabled = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 1, 0)
+    Case 1 ' Port as digital input
+      swXBeeDIO1.Enabled = False
+      chkXBeeDIO1.Enabled = True
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 1, 3)
+    Case 2 ' Port as digital output
+      swXBeeDIO1.Enabled = True
+      chkXBeeDIO1.Enabled = False
+      swXBeeDIO1.Value = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 1, 4)
+  End Select
+
+End
+
+Public Sub cmbXBeeDIO2_Click()
+Select cmbXBeeDIO0.Index
+    
+    Case 0 ' Port Disabled
+      swXBeeDIO2.Enabled = False
+      chkXBeeDIO2.Enabled = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 2, 0)
+    Case 1 ' Port as digital input
+      swXBeeDIO2.Enabled = False
+      chkXBeeDIO2.Enabled = True
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 2, 3)
+    Case 2 ' Port as digital output
+      swXBeeDIO2.Enabled = True
+      chkXBeeDIO2.Enabled = False
+      swXBeeDIO2.Value = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 2, 4)
+  End Select
+
+End
+
+Public Sub cmbXBeeDIO3_Click()
+
+  Select cmbXBeeDIO0.Index
+    
+    Case 0 ' Port Disabled
+      swXBeeDIO3.Enabled = False
+      chkXBeeDIO3.Enabled = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 3, 0)
+    Case 1 ' Port as digital input
+      swXBeeDIO3.Enabled = False
+      chkXBeeDIO3.Enabled = True
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 3, 3)
+    Case 2 ' Port as digital output
+      swXBeeDIO3.Enabled = True
+      chkXBeeDIO3.Enabled = False
+      swXBeeDIO3.Value = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 3, 4)
+  End Select
+
+End
+
+Public Sub cmbXBeeDIO4_Click()
+
+   Select cmbXBeeDIO0.Index
+    
+    Case 0 ' Port Disabled
+      swXBeeDIO4.Enabled = False
+      chkXBeeDIO4.Enabled = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 4, 0)
+    Case 1 ' Port as digital input
+      swXBeeDIO4.Enabled = False
+      chkXBeeDIO4.Enabled = True
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 4, 3)
+    Case 2 ' Port as digital output
+      swXBeeDIO4.Enabled = True
+      chkXBeeDIO4.Enabled = False
+      swXBeeDIO4.Value = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 4, 4)
+  End Select
+
+End
+
+Public Sub cmbXBeeDIO5_Click()
+
+  Select cmbXBeeDIO0.Index
+    
+    Case 0 ' Port Disabled
+      swXBeeDIO5.Enabled = False
+      chkXBeeDIO5.Enabled = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 5, 0)
+    Case 1 ' Port as digital input
+      swXBeeDIO5.Enabled = False
+      chkXBeeDIO5.Enabled = True
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 5, 3)
+    Case 2 ' Port as digital output
+      swXBeeDIO5.Enabled = True
+      chkXBeeDIO5.Enabled = False
+      swXBeeDIO5.Value = False
+      curInstance.DomoXBee_SetIO(curNode.sXBeeName, 5, 4)
+  End Select
+End
+
+Public Sub btnSetDeviceName_Click()
+  Dim aux As String
+  Dim cmd As String
+  Dim i As Integer
+  
+  aux = txtDeviceName.Text
+  cmd = ""
+  
+  If Len(aux) > 0 Then
+    For i = 1 To Len(aux) Step 1
+      cmd = cmd & Asc(aux, i)
+    Next
+    cmd = "[SETID " & cmd & "0]\n"
+  
+    curInstance.SendDXCommand(curNode, cmd)  
+  Endif  
+End

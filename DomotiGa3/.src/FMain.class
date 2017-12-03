@@ -2311,3 +2311,21 @@ Public Sub MenuSettingsModbus_Click()
   FSettingsModbus.Show()
 
 End
+
+Public Sub MenuInterfacesDomotrix_Click()
+
+  FSettingsDomotrix.Show()
+
+End
+
+Public Sub MenuToolsDomotrixCmdr_Click()
+
+  FToolsDomotrixCmdr.Show
+
+End
+
+Public Sub wrkMain_Activate()
+
+  
+
+End

@@ -1,0 +1,693 @@
+# Gambas Form File 3.0
+
+{ Form Form
+  MoveScaled(0,0,114,74)
+  Text = ("Domotrix Commander")
+  { lblNetwork Label
+    MoveScaled(1,1,17,2)
+    Text = ("Domotrix devices")
+  }
+  { btnClose Button
+    MoveScaled(99,68,14,4)
+    Text = ("Close")
+  }
+  { gridNetwork GridView
+    MoveScaled(1,3,99,27)
+    Font = Font["-1"]
+    Mode = Select.Single
+    Grid = False
+    Header = GridView.Horizontal
+    ScrollBar = Scroll.Vertical
+  }
+  { TabMain TabStrip
+    MoveScaled(1,31,112,36)
+    Count = 5
+    Index = 0
+    Text = ("Device Control")
+    { lblBUTT1 Label
+      MoveScaled(1,1,9,4)
+      Text = ("Button 1")
+    }
+    { picBUTT1 PictureBox
+      MoveScaled(9,2,4,3)
+      Picture = Picture["icons/red-icon.png"]
+      Alignment = Align.Center
+    }
+    { lblBUTT2 Label
+      MoveScaled(1,6,9,4)
+      Text = ("Button 2")
+    }
+    { picBUTT2 PictureBox
+      MoveScaled(9,7,4,3)
+      Picture = Picture["icons/red-icon.png"]
+      Alignment = Align.Center
+    }
+    { lblBUTT3 Label
+      MoveScaled(1,11,9,4)
+      Text = ("Button 3")
+    }
+    { picBUTT3 PictureBox
+      MoveScaled(9,12,4,3)
+      Picture = Picture["icons/red-icon.png"]
+      Alignment = Align.Center
+    }
+    { lblRELAY1 Label
+      MoveScaled(14,1,8,4)
+      Text = ("Relay 1")
+    }
+    { swRELAY1 SwitchButton
+      MoveScaled(22,1,8,4)
+      Enabled = False
+    }
+    { lblRELAY2 Label
+      MoveScaled(14,6,8,4)
+      Text = ("Relay 2")
+    }
+    { swRELAY2 SwitchButton
+      MoveScaled(22,6,8,4)
+      Enabled = False
+    }
+    { lblRELAY3 Label
+      MoveScaled(14,11,8,4)
+      Text = ("Relay 3")
+    }
+    { swRELAY3 SwitchButton
+      MoveScaled(22,11,8,4)
+      Enabled = False
+    }
+    { Separator3 Separator
+      MoveScaled(12,1,1,14)
+    }
+    { lblLAMP1 Label
+      MoveScaled(44,1,8,4)
+      Text = ("Lamp 1")
+    }
+    { lblLAMP2 Label
+      MoveScaled(44,6,8,4)
+      Text = ("Lamp 2")
+    }
+    { swLAMP1 SwitchButton
+      MoveScaled(52,1,8,4)
+      Enabled = False
+    }
+    { swLAMP2 SwitchButton
+      MoveScaled(52,6,8,4)
+      Enabled = False
+    }
+    { swLAMP3 SwitchButton
+      MoveScaled(52,11,8,4)
+      Enabled = False
+    }
+    { lblLAMP3 Label
+      MoveScaled(44,11,8,4)
+      Text = ("Lamp 3")
+    }
+    { lblBLIND1 Label
+      MoveScaled(77,7,6,4)
+      Text = ("Blind 1")
+    }
+    { lblBLIND2 Label
+      MoveScaled(88,7,6,4)
+      Text = ("Blind 2")
+    }
+    { lblBlind1Value Label
+      MoveScaled(79,5,4,4)
+      Text = ("0%")
+    }
+    { lblBlind2Value Label
+      MoveScaled(91,5,4,4)
+      Text = ("0%")
+    }
+    { lcdTemp1 LCDLabel
+      MoveScaled(2,20,10,8)
+      Text = ("20.5")
+    }
+    { btnBlind1Up Button
+      MoveScaled(74,1,8,4)
+      Enabled = False
+      Text = ("Up")
+    }
+    { btnBlind1Down Button
+      MoveScaled(74,11,8,4)
+      Enabled = False
+      Text = ("Down")
+    }
+    { btnBlind2Up Button
+      MoveScaled(86,1,8,4)
+      Enabled = False
+      Text = ("Up")
+    }
+    { btnBlind2Down Button
+      MoveScaled(86,11,8,4)
+      Enabled = False
+      Text = ("Down")
+    }
+    { txtTemp1Id TextLabel
+      MoveScaled(0,17,14,4)
+      Alignment = Align.Center
+    }
+    { lcdTemp2 LCDLabel
+      MoveScaled(17,20,10,8)
+      Text = ("20.5")
+    }
+    { txtTemp2Id TextLabel
+      MoveScaled(15,17,14,4)
+      Alignment = Align.Center
+    }
+    { Separator1 Separator
+      MoveScaled(42,1,1,14)
+    }
+    { Separator2 Separator
+      MoveScaled(71,1,1,14)
+    }
+    { btnRelay1 Button
+      MoveScaled(31,1,10,4)
+      Enabled = False
+      Text = ("Toggle")
+    }
+    { btnBlind2Plus Button
+      MoveScaled(94,1,3,4)
+      Enabled = False
+      Text = ("+")
+    }
+    { btnBlind1Plus Button
+      MoveScaled(82,1,3,4)
+      Enabled = False
+      Text = ("+")
+    }
+    { btnBlind2Minus Button
+      MoveScaled(94,11,3,4)
+      Enabled = False
+      Text = ("-")
+    }
+    { btnBlind1Minus Button
+      MoveScaled(82,11,3,4)
+      Enabled = False
+      Text = ("-")
+    }
+    { btnRelay2 Button
+      MoveScaled(31,6,10,4)
+      Enabled = False
+      Text = ("Toggle")
+    }
+    { btnRelay3 Button
+      MoveScaled(31,11,10,4)
+      Enabled = False
+      Text = ("Toggle")
+    }
+    { btnLamp1 Button
+      MoveScaled(61,1,10,4)
+      Enabled = False
+      Text = ("Toggle")
+    }
+    { btnLamp2 Button
+      MoveScaled(61,6,10,4)
+      Enabled = False
+      Text = ("Toggle")
+    }
+    { btnLamp3 Button
+      MoveScaled(61,11,10,4)
+      Enabled = False
+      Text = ("Toggle")
+    }
+    Index = 1
+    Text = ("XBee")
+    { cmbXBeeDIO0 ComboBox
+      MoveScaled(7,7,20,4)
+      ReadOnly = True
+      List = [("Disabled"), ("Digital Input"), ("Digital Output")]
+    }
+    { Label16 Label
+      MoveScaled(1,12,5,4)
+      Font = Font["Bold"]
+      Text = ("DIO1")
+    }
+    { Label17 Label
+      MoveScaled(1,17,5,4)
+      Font = Font["Bold"]
+      Text = ("DIO2")
+    }
+    { Label18 Label
+      MoveScaled(55,7,5,4)
+      Font = Font["Bold"]
+      Text = ("DIO3")
+    }
+    { Label19 Label
+      MoveScaled(55,12,5,4)
+      Font = Font["Bold"]
+      Text = ("DIO4")
+    }
+    { lblXbeeName Label
+      MoveScaled(1,1,6,4)
+      Font = Font["Bold"]
+      Text = ("Name")
+    }
+    { Label21 Label
+      MoveScaled(55,17,6,4)
+      Font = Font["Bold"]
+      Text = ("DIO5")
+    }
+    { Label15 Label
+      MoveScaled(1,7,5,4)
+      Font = Font["Bold"]
+      Text = ("DIO0")
+    }
+    { cmbXBeeDIO1 ComboBox
+      MoveScaled(7,12,20,4)
+      ReadOnly = True
+      List = [("Disabled"), ("Digital Input"), ("Digital Output")]
+    }
+    { lblXbeeFunction Label
+      MoveScaled(49,1,8,4)
+      Font = Font["Bold"]
+      Text = ("Function:")
+    }
+    { lblXbeeMAC Label
+      MoveScaled(84,1,5,4)
+      Font = Font["Bold"]
+      Text = ("MAC:")
+    }
+    { cmbXBeeDIO2 ComboBox
+      MoveScaled(7,17,20,4)
+      ReadOnly = True
+      List = [("Disabled"), ("Digital Input"), ("Digital Output")]
+    }
+    { cmbXBeeDIO3 ComboBox
+      MoveScaled(61,7,20,4)
+      ReadOnly = True
+      List = [("Disabled"), ("Digital Input"), ("Digital Output")]
+    }
+    { cmbXBeeDIO4 ComboBox
+      MoveScaled(61,12,20,4)
+      ReadOnly = True
+      List = [("Disabled"), ("Digital Input"), ("Digital Output")]
+    }
+    { cmbXBeeDIO5 ComboBox
+      MoveScaled(61,17,20,4)
+      ReadOnly = True
+      List = [("Disabled"), ("Digital Input"), ("Digital Output")]
+    }
+    { chkXBeeDIO0 CheckBox
+      MoveScaled(37,7,10,4)
+      Text = ("Detect")
+    }
+    { swXBeeDIO0 SwitchButton
+      MoveScaled(27,7,8,4)
+    }
+    { swXBeeDIO1 SwitchButton
+      MoveScaled(27,12,8,4)
+    }
+    { swXBeeDIO2 SwitchButton
+      MoveScaled(27,17,8,4)
+    }
+    { chkXBeeDIO1 CheckBox
+      MoveScaled(37,12,10,4)
+      Text = ("Detect")
+    }
+    { chkXBeeDIO2 CheckBox
+      MoveScaled(37,17,10,4)
+      Text = ("Detect")
+    }
+    { Separator4 Separator
+      MoveScaled(50,7,1,15)
+    }
+    { swXBeeDIO3 SwitchButton
+      MoveScaled(81,7,8,4)
+    }
+    { swXBeeDIO4 SwitchButton
+      MoveScaled(81,12,8,4)
+    }
+    { swXBeeDIO5 SwitchButton
+      MoveScaled(81,17,8,4)
+    }
+    { chkXBeeDIO3 CheckBox
+      MoveScaled(90,7,10,4)
+      Text = ("Detect")
+    }
+    { chkXBeeDIO4 CheckBox
+      MoveScaled(90,12,10,4)
+      Text = ("Detect")
+    }
+    { chkXBeeDIO5 CheckBox
+      MoveScaled(90,17,10,4)
+      Text = ("Detect")
+    }
+    { txtXBeeName TextBox
+      MoveScaled(7,1,24,4)
+    }
+    { lblXBeeFuncionValue Label
+      MoveScaled(58,1,24,4)
+    }
+    { lblXbeeMACValue Label
+      MoveScaled(90,1,20,4)
+      Text = ("MAC:")
+    }
+    { btnXBeeNameChange Button
+      MoveScaled(32,1,10,4)
+      Text = ("Update")
+    }
+    Index = 2
+    Text = ("Arduino")
+    { TabConfig TabStrip
+      MoveScaled(0,0,112,31)
+      Enabled = False
+      Count = 15
+      Index = 0
+      Text = ("EEPROM")
+      { dirEEPROMLoad DirBox
+        MoveScaled(22,3,38,4)
+        Font = Font["-2"]
+      }
+      { btnEEPROM_Load Button
+        MoveScaled(64,3,28,4)
+        Text = ("Set EEPROM to default")
+      }
+      { Label3 Label
+        MoveScaled(2,9,15,4)
+        Text = ("Backup file")
+      }
+      { Label1 Label
+        MoveScaled(2,3,20,4)
+        Text = ("Default config file")
+      }
+      { Label2 Label
+        MoveScaled(2,16,15,4)
+        Text = ("Last backup:")
+      }
+      { lblLastBackup Label
+        MoveScaled(22,16,17,4)
+      }
+      { dirEEPROMRestore DirBox
+        MoveScaled(22,9,38,4)
+        Font = Font["-2"]
+      }
+      { btnEEPROM_Backup Button
+        MoveScaled(64,9,13,4)
+        Text = ("Backup")
+      }
+      { btnEEPROM_Restore Button
+        MoveScaled(79,9,13,4)
+        Text = ("Restore")
+      }
+      Index = 1
+      Text = ("I/O Functions")
+      { lblDIN1 Label
+        MoveScaled(1,2,13,4)
+        Text = ("DIN 1:")
+      }
+      { lblDIN2 Label
+        MoveScaled(1,7,13,4)
+        Text = ("DIN 2:")
+      }
+      { lblDIN3 Label
+        MoveScaled(1,12,13,4)
+        Text = ("DIN 3:")
+      }
+      { lblDIN4 Label
+        MoveScaled(1,17,13,4)
+        Text = ("DIN 4:")
+      }
+      { cmbFunDIN1 ComboBox
+        MoveScaled(7,2,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { cmbFunDIN2 ComboBox
+        MoveScaled(7,7,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { cmbFunDIN3 ComboBox
+        MoveScaled(7,12,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { cmbFunDIN4 ComboBox
+        MoveScaled(7,17,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { lblDOUT1 Label
+        MoveScaled(25,2,10,4)
+        Text = ("DOUT 1:")
+      }
+      { cmbFunDOUT1 ComboBox
+        MoveScaled(33,2,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { lblDOUT2 Label
+        MoveScaled(25,7,10,4)
+        Text = ("DOUT 2:")
+      }
+      { lblDOUT3 Label
+        MoveScaled(25,12,10,4)
+        Text = ("DOUT 3:")
+      }
+      { lblDOUT4 Label
+        MoveScaled(25,17,10,4)
+        Text = ("DOUT 4:")
+      }
+      { cmbFunDOUT2 ComboBox
+        MoveScaled(33,7,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { cmbFunDOUT3 ComboBox
+        MoveScaled(33,12,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { cmbFunDOUT4 ComboBox
+        MoveScaled(33,17,15,4)
+        ReadOnly = True
+        Sorted = True
+      }
+      { lblFunTemp Label
+        MoveScaled(51,2,13,4)
+        Text = ("Temp. Sensor:")
+      }
+      { lblFunPresence Label
+        MoveScaled(51,7,15,4)
+        Text = ("PIR sensor:")
+      }
+      { lblAIN1 Label
+        MoveScaled(51,12,12,4)
+        Text = ("AIN 1:")
+      }
+      { swFunTempSensor SwitchButton
+        MoveScaled(65,2,13,4)
+      }
+      { swFunPirSensor SwitchButton
+        MoveScaled(65,7,13,4)
+      }
+      { btnApplyFunctions Button
+        MoveScaled(62,19,16,4)
+        Text = ("Apply changes")
+      }
+      { cmbFunAIN1 ComboBox
+        MoveScaled(63,12,15,4)
+        Enabled = False
+        ReadOnly = True
+      }
+      Index = 2
+      Text = ("Button 1")
+      { Label4 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 3
+      Text = ("Button 2")
+      { Label5 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 4
+      Text = ("Button 3")
+      { Label6 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 5
+      Text = ("Relay 1")
+      { Label7 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 6
+      Text = ("Relay 2")
+      { Label8 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 7
+      Text = ("Relay 3")
+      { Label9 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 8
+      Text = ("Lamp 1")
+      { cmbLamp1AutoOff ComboBox
+        MoveScaled(16,7,24,4)
+        ReadOnly = True
+        List = [("Never"), ("1 minute"), ("3 minutes"), ("5 minutes"), ("15 minutes"), ("30 minutes"), ("1 hour"), ("2 hours"), ("3 hours"), ("4 hours"), ("8 hours"), ("24 hours")]
+      }
+      { lblLamp1AutoOff Label
+        MoveScaled(2,7,13,4)
+        Text = ("Auto OFF after")
+      }
+      { lblLamp1InputMode Label
+        MoveScaled(2,2,24,4)
+        Text = ("Input mode")
+      }
+      { cmbLamp1InputMode ComboBox
+        MoveScaled(16,2,24,4)
+        ReadOnly = True
+        List = [("Switch"), ("Push button")]
+      }
+      Index = 9
+      Text = ("Lamp 2")
+      { lblLamp2InputMode Label
+        MoveScaled(2,2,24,4)
+        Text = ("Input mode")
+      }
+      { cmbLamp2InputMode ComboBox
+        MoveScaled(16,2,24,4)
+        ReadOnly = True
+        List = [("Switch"), ("Push button")]
+      }
+      { lblLamp2AutoOff Label
+        MoveScaled(2,7,13,4)
+        Text = ("Auto OFF after")
+      }
+      { cmbLamp2AutoOff ComboBox
+        MoveScaled(16,7,24,4)
+        ReadOnly = True
+        List = [("Never"), ("1 minute"), ("3 minutes"), ("5 minutes"), ("15 minutes"), ("30 minutes"), ("1 hour"), ("2 hours"), ("3 hours"), ("4 hours"), ("8 hours"), ("24 hours")]
+      }
+      Index = 10
+      Text = ("Lamp 3")
+      { lblLamp3InputMode Label
+        MoveScaled(2,2,24,4)
+        Text = ("Input mode")
+      }
+      { cmbLamp3InputMode ComboBox
+        MoveScaled(16,2,24,4)
+        ReadOnly = True
+        List = [("Switch"), ("Push button")]
+      }
+      { cmbLamp3AutoOff ComboBox
+        MoveScaled(16,7,24,4)
+        ReadOnly = True
+        List = [("Never"), ("1 minute"), ("3 minutes"), ("5 minutes"), ("15 minutes"), ("30 minutes"), ("1 hour"), ("2 hours"), ("3 hours"), ("4 hours"), ("8 hours"), ("24 hours")]
+      }
+      { lblLamp3AutoOff Label
+        MoveScaled(2,7,13,4)
+        Text = ("Auto OFF after")
+      }
+      Index = 11
+      Text = ("Blind 1")
+      { Label10 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 12
+      Text = ("Blind 2")
+      { Label11 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 13
+      Text = ("Temp")
+      { Label12 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 14
+      Text = ("PIR")
+      { Label13 Label
+        MoveScaled(1,1,24,4)
+        Text = ("No options available.")
+      }
+      Index = 0
+    }
+    Index = 3
+    Text = ("ESP8266")
+    { Label14 Label
+      MoveScaled(1,1,24,4)
+      Text = ("No options available.")
+    }
+    Index = 4
+    Text = ("Console")
+    { txtCmd TextBox
+      MoveScaled(0,1,71,4)
+    }
+    { txtConsole TextArea
+      MoveScaled(0,6,82,23)
+      Font = Font["-2"]
+      ReadOnly = True
+      Wrap = True
+    }
+    { btnSend Button
+      MoveScaled(72,1,10,4)
+      Text = ("Send")
+    }
+    { btnConnect Button
+      MoveScaled(83,11,10,4)
+      Text = ("CONNECT")
+    }
+    { btnConfig Button
+      MoveScaled(95,11,10,4)
+      Text = ("CONFIG")
+    }
+    { btnReset Button
+      MoveScaled(95,16,10,4)
+      Text = ("RESET")
+    }
+    { txtDeviceName TextBox
+      MoveScaled(83,6,22,4)
+    }
+    { btnSetDeviceName Button
+      MoveScaled(105,6,5,4)
+      Text = ("Set")
+    }
+    { btnClear Button
+      MoveScaled(83,25,10,4)
+      Text = ("<<Clear")
+    }
+    { btnStat Button
+      MoveScaled(83,16,10,4)
+      Text = ("STAT")
+    }
+    Index = 0
+  }
+  { lblNodeName Label
+    MoveScaled(88,32,24,2)
+    Font = Font["-1"]
+    Foreground = &HFF0000&
+    Alignment = Align.Right
+  }
+  { btnDiscoverNodes Button
+    MoveScaled(102,3,11,4)
+    Text = ("Discover")
+  }
+  { btnEnable Button
+    MoveScaled(102,7,11,4)
+    Enabled = False
+    Text = ("Enable")
+  }
+  { btnDisable Button
+    MoveScaled(102,11,11,4)
+    Enabled = False
+    Text = ("Disable")
+  }
+  { btnDeleteNode Button
+    MoveScaled(102,15,11,4)
+    Enabled = False
+    Text = ("Delete")
+  }
+  { tProgress #Timer
+    #MoveScaled(1,67)
+  }
+}

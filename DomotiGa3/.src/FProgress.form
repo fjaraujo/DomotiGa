@@ -1,0 +1,15 @@
+# Gambas Form File 3.0
+
+{ Form Form
+  MoveScaled(0,0,64,18)
+  { ProgressBarStatus ProgressBar
+    MoveScaled(5,6,54,4)
+  }
+  { btnCancel Button
+    MoveScaled(24,12,16,4)
+    Text = ("Cancel")
+  }
+  { lblStatus Label
+    MoveScaled(5,3,54,4)
+  }
+}

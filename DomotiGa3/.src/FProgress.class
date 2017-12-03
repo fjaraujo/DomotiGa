@@ -1,0 +1,36 @@
+' Gambas class file
+
+Public sNode As String  ' NodeId that is related with the transaction. This is to perform cancelation if requested
+Public hXBee As Object
+
+
+Public Sub Form_Open()
+  
+  Me.Move(FToolsDomotrixCmdr.X + 50, FToolsDomotrixCmdr.Y + 70)
+  
+End
+
+
+Public Sub btnCancel_Click()
+  Dim node As Object
+  
+  If (Not IsNull(sNode)) Then
+     node = hXBee.cNodes[sNode]
+     node.sCurrentCommand = "" ' With this, the current transaction will be cancelled
+     Me.lblStatus.text = "Updating config data..."
+     setProgressBar(85)
+     Try hXBee.XbeeSendCommand(sNode, "[CONNECT]\n")
+  Endif 
+
+  Me.Close
+
+End
+
+
+Public Sub setProgressBar(percentage As Integer)
+  
+  Me.ProgressBarStatus.Value = percentage / 100
+  
+End
+
+  
