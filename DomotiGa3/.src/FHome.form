@@ -69,6 +69,21 @@
             Text = ("Mute")
           }
         }
+        { frameInside Frame
+          MoveScaled(0,2,46,18)
+          Text = ("Inside")
+          { txtTemperatureIn TextLabel
+            MoveScaled(2,3,21,6)
+            Font = Font["+9"]
+          }
+          { txtHumidIn TextLabel
+            MoveScaled(2,9,17,4)
+          }
+          { pbInsideTemp PictureBox
+            MoveScaled(19,2,26,15)
+            Alignment = Align.Center
+          }
+        }
         { frameTemperatureControl Frame
           MoveScaled(0,0,46,27)
           Text = ("Temperature Control")
@@ -93,21 +108,6 @@
               MoveScaled(37,1,4,21)
               Spacing = True
             }
-          }
-        }
-        { frameInside Frame
-          MoveScaled(0,2,46,18)
-          Text = ("Inside")
-          { txtTemperatureIn TextLabel
-            MoveScaled(2,3,21,6)
-            Font = Font["+9"]
-          }
-          { txtHumidIn TextLabel
-            MoveScaled(2,9,17,4)
-          }
-          { pbInsideTemp PictureBox
-            MoveScaled(19,2,26,15)
-            Alignment = Align.Center
           }
         }
         { frameOutside Frame

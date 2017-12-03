@@ -3,7 +3,7 @@
 { Form Form
   MoveScaled(0,0,82,69)
   Background = Color.TextBackground
-  Text = ("Edit News, Weather ...")
+  Text = ("Edit News, Weather ") & "..."
   Icon = Picture["icons/rss.png"]
   Resizable = False
   { btnClose Button

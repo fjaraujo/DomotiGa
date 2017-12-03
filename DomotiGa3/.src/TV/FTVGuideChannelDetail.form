@@ -55,13 +55,13 @@
     Move(448,70,140,14)
     Background = &HC0C0C0&
     Tag = "True"
-    Text = ("Begins at ...")
+    Text = ("Begins at ") & "..."
   }
   { LblTitle4 Label
     Move(588,70,140,14)
     Background = &HC0C0C0&
     Tag = "True"
-    Text = ("Ends at ...")
+    Text = ("Ends at ") & "..."
   }
   { ColVw ColumnView
     Move(14,70,749,476)

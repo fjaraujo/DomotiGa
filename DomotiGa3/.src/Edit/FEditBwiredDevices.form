@@ -33,7 +33,6 @@
     { cmbValue ComboBox
       MoveScaled(16,13,12,4)
       ReadOnly = True
-      List = Null
     }
     { cmbLabel ComboBox
       MoveScaled(30,13,10,4)

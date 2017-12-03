@@ -54,7 +54,7 @@
     { btSave Button
       MoveScaled(81,53,16,4)
       Enabled = False
-      ToolTip = ("Save TFA setup to db...")
+      ToolTip = ("Save TFA setup to db") & "..."
       Text = ("Save")
     }
     { SpinBox1 SpinBox

@@ -55,7 +55,7 @@
     }
     { TextLblABCDE TextLabel
       MoveScaled(26,22,17,4)
-      Text = ("A,B,...")
+      Text = ("A,B,") & "..."
       Alignment = Align.Normal
     }
     { TextLblUserCode TextLabel

@@ -1,81 +1,82 @@
 # Gambas Form File 3.0
-{ Form Form 
+
+{ Form Form
   MoveScaled(0,0,108,75)
   Background = Color.TextBackground
   Text = ("System Debug")
   Icon = Picture["icons/vars.png"]
-  { Frame2 Frame 
+  { Frame2 Frame
     MoveScaled(1,1,32,24)
     Text = ("VoiceText Speak")
-    { btnSpeakDefault Button 
+    { btnSpeakDefault Button
       MoveScaled(3,3,12,4)
       Text = ("Default")
     }
-    { btnSpeakMale Button 
+    { btnSpeakMale Button
       MoveScaled(3,8,12,4)
       Text = ("Male")
     }
-    { btnSpeakFemale Button 
+    { btnSpeakFemale Button
       MoveScaled(3,13,12,4)
       Text = ("Female")
     }
-    { btnSpeakAllison Button 
+    { btnSpeakAllison Button
       MoveScaled(16,3,12,4)
       Text = ("Allison")
     }
-    { btnSpeakLinda Button 
+    { btnSpeakLinda Button
       MoveScaled(16,8,12,4)
       Text = ("Linda")
     }
-    { btnSpeakEmily Button 
+    { btnSpeakEmily Button
       MoveScaled(16,13,12,4)
       Text = ("Emily")
     }
   }
-  { Frame3 Frame 
+  { Frame3 Frame
     MoveScaled(34,1,18,14)
     Text = ("Sounds")
-    { btnSoundPlay Button 
+    { btnSoundPlay Button
       MoveScaled(3,3,12,4)
       Text = ("Play Click")
     }
-    { btnSoundPlay50 Button 
+    { btnSoundPlay50 Button
       MoveScaled(3,8,12,4)
       Text = ("Play 50% vol")
     }
   }
-  { Frame4 Frame 
+  { Frame4 Frame
     MoveScaled(34,16,18,9)
     Text = ("WakeOnLan")
-    { btnWOL Button 
+    { btnWOL Button
       MoveScaled(3,3,12,4)
       Text = ("PC On")
     }
   }
-  { Frame5 Frame 
+  { Frame5 Frame
     MoveScaled(53,1,18,24)
     Text = ("ITHO Fan")
-    { btnFanSpd1 Button 
+    { btnFanSpd1 Button
       MoveScaled(3,3,12,4)
       Text = ("Speed 1")
     }
-    { btnFanSpd2 Button 
+    { btnFanSpd2 Button
       MoveScaled(3,8,12,4)
       Text = ("Speed 2")
     }
-    { btnFanSpd3 Button 
+    { btnFanSpd3 Button
       MoveScaled(3,13,12,4)
       Text = ("Speed 3")
     }
-    { btnFanTimer Button 
+    { btnFanTimer Button
       MoveScaled(3,18,12,4)
       Text = ("Timer")
     }
   }
-  { Frame1 Frame 
+  { Frame1 Frame
     MoveScaled(1,25,88,44)
     Text = ("Global Vars")
-    { tbvGlobalVar TableView 
+    { tbvGlobalVar TableView
       MoveScaled(1,3,86,40)
       Header = GridView.Horizontal
     }

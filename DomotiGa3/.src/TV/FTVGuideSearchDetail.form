@@ -1,36 +1,37 @@
 # Gambas Form File 3.0
-{ Form Form 
+
+{ Form Form
   Move(0,0,777,553)
   #Scaled = False
   Background = Color.TextBackground
   Text = ("TV Guide Search Details")
   Resizable = False
   SkipTaskbar = True
-  { LblTitle2 Label 
+  { LblTitle2 Label
     Move(189,14,266,14)
     Background = &HC0C0C0&
     Tag = "True"
     Text = ("Program Name")
   }
-  { LblTitle1 Label 
+  { LblTitle1 Label
     Move(14,14,175,14)
     Background = &HC0C0C0&
     Tag = "True"
     Text = ("Channel")
   }
-  { LblTitle3 Label 
+  { LblTitle3 Label
     Move(455,14,140,14)
     Background = &HC0C0C0&
     Tag = "True"
-    Text = ("Begins at ...")
+    Text = ("Begins at ") & "..."
   }
-  { LblTitle4 Label 
+  { LblTitle4 Label
     Move(595,14,140,14)
     Background = &HC0C0C0&
     Tag = "True"
-    Text = ("Ends at ...")
+    Text = ("Ends at ") & "..."
   }
-  { ColVw ColumnView 
+  { ColVw ColumnView
     Move(14,14,749,532)
     Tag = "True"
     Mouse = Mouse.Pointing

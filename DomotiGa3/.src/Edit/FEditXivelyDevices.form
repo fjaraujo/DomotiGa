@@ -32,7 +32,6 @@
     { cmbValue ComboBox
       MoveScaled(13,18,12,4)
       ReadOnly = True
-      List = Null
     }
     { cmbDevices ComboBox
       MoveScaled(13,13,25,4)

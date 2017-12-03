@@ -51,7 +51,7 @@
       }
       { txtPassword TextBox
         MoveScaled(20,30,16,4)
-        ToolTip = ("Please type your password here...")
+        ToolTip = ("Please type your password here") & "..."
         Password = True
       }
       { dcUserName DataControl
@@ -63,7 +63,7 @@
       }
       { txtPasswordRetype TextBox
         MoveScaled(20,35,16,4)
-        ToolTip = ("Please type your password here...")
+        ToolTip = ("Please type your password here") & "..."
         Password = True
       }
       { dcAdmin DataControl

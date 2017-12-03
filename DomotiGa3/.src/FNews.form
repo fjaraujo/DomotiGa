@@ -1,23 +1,24 @@
 # Gambas Form File 3.0
-{ Form Form 
+
+{ Form Form
   MoveScaled(0,0,94,51)
   Background = Color.TextBackground
   Text = ("News")
   Icon = Picture["icons/rss.png"]
-  { tbFeeds ToolBar 
+  { tbFeeds ToolBar
     MoveScaled(0,0,75,4)
-    { hbFeeds HBox 
+    { hbFeeds HBox
       MoveScaled(0,0,72,4)
       Spacing = True
     }
   }
-  { pnlNews Panel 
+  { pnlNews Panel
     MoveScaled(1,5,88,45)
-    { lvItems ListView 
+    { lvItems ListView
       MoveScaled(1,1,29,27)
     }
     { txtItem TextEditor
-      MoveScaled(32,1.1429,28,27)
+      MoveScaled(32,1.125,28,27)
     }
   }
 }

@@ -167,7 +167,7 @@
           }
           { DataControl16 DataControl
             MoveScaled(15,3,16,4)
-            ToolTip = ("Private, Work, Friends...")
+            ToolTip = ("Private, Work, Friends") & "..."
             Field = "type"
           }
           { Text_Datacontrol12 TextLabel
